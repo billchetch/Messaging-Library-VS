@@ -31,7 +31,9 @@ namespace Chetch.Messaging
         DATA,
         CONNECTION_REQUEST,
         CONNECTION_REQUEST_RESPONSE,
-        SHUTDOWN
+        SHUTDOWN,
+        SUBSCRIBE,
+        UNSUBSCRIBE
     }
 
     public enum MessageEncoding
@@ -61,7 +63,7 @@ namespace Chetch.Messaging
         public String ID;
         public String Target; //to help routing to the correct place at the receive end
         public String ResponseID; //normally the ID of the message that was sent requesting a response (e.g. Ping and Ping Response)
-        public String Sender; 
+        public String Sender;
         public MessageType Type;
         public int SubType;
         public List<MessageValue> Values = new List<MessageValue>();
@@ -196,6 +198,11 @@ namespace Chetch.Messaging
         {
             return (byte)GetInt(key);
         }
+
+        /*public byte GetBool(String key)
+        {
+            return System.Convert.ToBoolean(GetString(key));
+        }*/
 
         public void Clear()
         {
@@ -397,6 +404,7 @@ namespace Chetch.Messaging
                 if (p is MessageType)
                 {
                     p = (T)(Object)Int32.Parse(vals[key].ToString());
+                    vals.Remove(key);
                 }
                 else
                 {

@@ -11,12 +11,10 @@ namespace Chetch.Messaging
 {
     abstract public class ConnectionManager
     {
-        public delegate void MessageHandler(Connection cnn, Message message);
-        public delegate void ErrorHandler(Connection cnn, Exception e);
-
         protected class ConnectionRequest
         {
             public String ID = null;
+            public String Name = null;
             public bool Granted = false;
             public Connection Connection = null;
             public Message Request = null;
@@ -68,10 +66,6 @@ namespace Chetch.Messaging
         public int DefaultActivityTimeout { get; set; } = -1;
         private Object _lockConnections = new Object();
 
-        public MessageHandler HandleMessage = null;
-        public ErrorHandler HandleError = null;
-
-
         public ConnectionManager()
         {
 
@@ -114,18 +108,9 @@ namespace Chetch.Messaging
             }
         }
 
-        virtual public void HandleReceivedMessage(Connection cnn, Message message)
-        {
-            HandleMessage?.Invoke(cnn, message);
-        }
-        virtual protected void HandleConnectionErrors(Connection cnn, List<Exception> exceptions)
-        {
-            foreach (var e in exceptions)
-            {
-                HandleError?.Invoke(cnn, e);
-            }
-        }
-
+        abstract public void HandleReceivedMessage(Connection cnn, Message message);
+        abstract protected void HandleConnectionErrors(Connection cnn, List<Exception> exceptions);
+        
         virtual public void OnConnectionClosed(Connection cnn, List<Exception> exceptions)
         {
             lock (_lockConnections)
@@ -187,6 +172,9 @@ namespace Chetch.Messaging
 
     abstract public class Server : ConnectionManager
     {
+        public MessageHandler HandleMessage = null;
+        public ErrorHandler HandleError = null;
+
         virtual public void Start()
         {
             if (PrimaryConnection == null || PrimaryConnection.CanOpen())
@@ -240,6 +228,18 @@ namespace Chetch.Messaging
             }
         }
 
+        protected Connection GetNamedConnection(String name)
+        {
+            foreach (var c in Connections.Values)
+            {
+                if (c.Name != null && c.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return c;
+                }
+            }
+            return null;
+        }
+
         override public void OnConnectionClosed(Connection cnn, List<Exception> exceptions)
         {
             base.OnConnectionClosed(cnn, exceptions);
@@ -270,9 +270,18 @@ namespace Chetch.Messaging
             }
         }
 
+        override protected void HandleConnectionErrors(Connection cnn, List<Exception> exceptions)
+        {
+            foreach (var e in exceptions)
+            {
+                HandleError?.Invoke(cnn, e);
+            }
+        }
+
         override public void HandleReceivedMessage(Connection cnn, Message message)
         {
-            base.HandleReceivedMessage(cnn, message);
+            //base.HandleReceivedMessage(cnn, message);
+            HandleMessage?.Invoke(cnn, message);
 
             Message response = null;
             switch (message.Type)
@@ -282,7 +291,15 @@ namespace Chetch.Messaging
                     if (cnn == PrimaryConnection)
                     {
                         Connection newCnn = null;
-                        if (Connections.Count + 1 < MaxConnections)
+                        String declined = null;
+                        if (message.Sender == null) declined = "Anonymous connection not allowed";
+                        if (Connections.Count + 1 >= MaxConnections) declined = "No available connections";
+                        if (declined == null && GetNamedConnection(message.Sender) != null)
+                        {
+                            declined = "Another connection is already owned by " + message.Sender;
+                        }
+
+                        if (declined == null)
                         {
                             newCnn = CreateConnection(message);
                             if (newCnn != null)
@@ -290,15 +307,21 @@ namespace Chetch.Messaging
                                 newCnn.Mgr = this;
                                 newCnn.RemainConnected = true;
                                 newCnn.RemainOpen = false;
+                                newCnn.Name = message.Sender;
                                 Connections[newCnn.ID] = newCnn;
+                            }
+                            else
+                            {
+                                declined = "Cannot create a connection";
                             }
                         }
 
-                        //prepare response
-                        if (newCnn == null)
+                        //Respond
+                        if (declined != null)
                         {
-                            response = CreateRequestResponse(message, newCnn);
-                            cnn.SendMessage(response);
+                            response = CreateRequestResponse(message, null);
+                            response.AddValue("Declined", declined);
+                            PrimaryConnection.SendMessage(response);
                         }
                         else
                         {
@@ -312,6 +335,10 @@ namespace Chetch.Messaging
                             } while (!cnnreq.Succeeded && !cnnreq.Failed);
 
                             response = CreateRequestResponse(message, cnnreq.Succeeded ? newCnn : null);
+                            if (cnnreq.Failed)
+                            {
+                                response.AddValue("Declined", "Connection request failed");
+                            }
                             PrimaryConnection.SendMessage(response);
                         }
                     }
@@ -325,7 +352,38 @@ namespace Chetch.Messaging
                     response = CreateStatusResponse(message, cnn);
                     cnn.SendMessage(response);
                     break;
+
+                default:
+                    //relay messages to other clients
+                    if (message.Target != null)
+                    {
+                        var targets = message.Target.Split(',');
+                        foreach (var target in targets)
+                        {
+                            var tgt = target.Trim();
+                            var ncnn = GetNamedConnection(tgt);
+                            if (ncnn != null)
+                            {
+                                message.Target = tgt;
+                                ncnn.SendMessage(message);
+                            }
+                            else
+                            {
+                                var emsg = CreateErrorMessage(tgt + " is not connected.", cnn);
+                                cnn.SendMessage(emsg);
+                            }
+                        }
+                    }
+                    break;
             }
+        }
+
+        virtual protected Message CreateErrorMessage(String errorMsg, Connection cnn)
+        {
+            var message = new Message();
+            message.Type = MessageType.ERROR;
+            message.Value = errorMsg;
+            return message;
         }
 
         virtual protected Message CreateRequestResponse(Message request, Connection newCnn)
@@ -336,7 +394,6 @@ namespace Chetch.Messaging
             if (newCnn != null)
             {
                 response.Target = request.Sender;
-                response.Sender = newCnn.ID;
                 response.AddValue("Granted", true);
             }
             else
@@ -351,7 +408,6 @@ namespace Chetch.Messaging
             var response = new Message();
             response.Type = MessageType.STATUS_RESPONSE;
             response.ResponseID = request.ID;
-            response.Sender = cnn.ID;
             response.Target = request.Sender;
             return response;
         }
@@ -379,6 +435,7 @@ namespace Chetch.Messaging
     abstract public class ClientManager : ConnectionManager
     {
         protected Queue<ConnectionRequest> ConnectionRequestQueue = new Queue<ConnectionRequest>();
+
 
         public ClientManager() : base()
         {
@@ -411,10 +468,13 @@ namespace Chetch.Messaging
             }
         }
 
+        override protected void HandleConnectionErrors(Connection cnn, List<Exception> exceptions)
+        {
+            //empty
+        }
+
         override public void HandleReceivedMessage(Connection cnn, Message message)
         {
-            base.HandleReceivedMessage(cnn, message);
-
             switch (message.Type)
             {
                 case MessageType.CONNECTION_REQUEST_RESPONSE:
@@ -429,6 +489,7 @@ namespace Chetch.Messaging
                             newCnn.Mgr = this;
                             newCnn.RemainConnected = true;
                             newCnn.RemainOpen = false;
+                            newCnn.Name = cnnreq.Name;
                             Connections[newCnn.ID] = newCnn;
                             cnnreq.Connection = newCnn;
                             newCnn.Open();
@@ -446,18 +507,20 @@ namespace Chetch.Messaging
             }
         }
 
-        virtual protected Message CreateConnectionRequest()
+        virtual protected Message CreateConnectionRequest(String owner)
         {
             var request = new Message();
             request.Type = MessageType.CONNECTION_REQUEST;
+            request.Sender = owner;
             return request;
         }
 
-        virtual public ClientConnection Connect(int timeout = -1)
+        virtual public ClientConnection Connect(String name, int timeout = -1)
         {
             InitialisePrimaryConnection();
 
-            var cnnreq = AddRequest(CreateConnectionRequest());
+            var cnnreq = AddRequest(CreateConnectionRequest(name));
+            cnnreq.Name = name;
             ConnectionRequestQueue.Enqueue(cnnreq);
             if (ConnectionRequestQueue.Peek() == cnnreq)
             {

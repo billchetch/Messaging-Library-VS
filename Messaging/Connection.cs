@@ -10,6 +10,9 @@ using Chetch.Application;
 
 namespace Chetch.Messaging
 {
+    public delegate void MessageHandler(Connection cnn, Message message);
+    public delegate void ErrorHandler(Connection cnn, Exception e);
+
     abstract public class Connection
     {
         public enum ConnectionState
@@ -24,7 +27,8 @@ namespace Chetch.Messaging
             CLOSED
         }
 
-        public String ID { get; set; }
+        public String ID { get; internal set; }
+        public String Name { get; internal set; }
         public int ConnectionTimeout { get; set; }
         public int ActivityTimeout { get; set; }
         public Dictionary<ConnectionState, long> States { get; internal set; } = new Dictionary<ConnectionState, long>();
@@ -349,11 +353,27 @@ namespace Chetch.Messaging
                 return false;
             }
         }
+
+        override public void SendMessage(Message message)
+        {
+            if (Name != null && message.Target == null)
+            {
+                //if this connection has a name then set the Target to the name for clarity
+                message.Target = Name;
+            }
+            base.SendMessage(message);
+        }
     } //end server conneciton class
 
 
     abstract public class ClientConnection : Connection
     {
+        public MessageHandler HandleMessage = null;
+        public ErrorHandler HandleError = null;
+
+        protected Dictionary<String, Message> Subscribers = new Dictionary<string, Message>();
+        protected Dictionary<String, Message> Subscriptions = new Dictionary<string, Message>();
+
         public ClientConnection(String cnnId, int cnnTimeout, int actTimeout) : base(cnnId, cnnTimeout, actTimeout)
         {
             RemainOpen = false;
@@ -374,10 +394,66 @@ namespace Chetch.Messaging
             }
         }
 
+        override protected void OnClose(List<Exception> exceptions)
+        {
+            base.OnClose(exceptions);
+            if(HandleError != null)
+            {
+                foreach(var e in exceptions)
+                {
+                    HandleError.Invoke(this, e);
+                }
+            }
+            
+        }
+
+        override protected void HandleReceivedMessage(Message message)
+        {
+            base.HandleReceivedMessage(message);
+            switch (message.Type)
+            {
+                case MessageType.SUBSCRIBE:
+                    if (message.Sender != null && !Subscribers.ContainsKey(message.Sender))
+                    {
+                        Subscribers[message.Sender] = message;
+                    }
+                    break;
+
+                case MessageType.UNSUBSCRIBE:
+                    if (message.Sender != null && Subscribers.ContainsKey(message.Sender))
+                    {
+                        Subscribers.Remove(message.Sender);
+                    }
+                    break;
+
+                    //TODO: handle error messages...
+                default:
+                    HandleMessage?.Invoke(this, message);
+                    break;
+            }
+        }
+
         override public void SendMessage(Message message)
         {
-            message.Sender = ID;
+            if (Name != null && message.Sender == null)
+            {
+                message.Sender = Name;
+            }
             base.SendMessage(message);
+        }
+
+        virtual public void SendMessage(String target, Message message)
+        {
+            message.Target = target;
+            SendMessage(message);
+        }
+
+        virtual public void SendMessage(String target, String message, MessageType type = MessageType.INFO)
+        {
+            var msg = new Message();
+            msg.Type = type;
+            msg.Value = message;
+            SendMessage(target, msg);
         }
 
         virtual public void RequestServerStatus()
@@ -388,5 +464,48 @@ namespace Chetch.Messaging
             request.Type = MessageType.STATUS_REQUEST;
             SendMessage(request);
         }
+
+        virtual public void Subscribe(String target)
+        {
+            var msg = new Message();
+            msg.Type = MessageType.SUBSCRIBE;
+            msg.Value = "Subscription request from " + Name;
+            msg.Target = target;
+            var targets = target.Split(',');
+            foreach (var tgt in targets)
+            {
+                Subscriptions[tgt.Trim()] = msg;
+            }
+            SendMessage(target, msg);
+        }
+
+        virtual public void Unsubscribe(String target)
+        {
+            var targets = target.Split(',');
+            foreach (var tgt in targets)
+            {
+                Subscriptions.Remove(tgt.Trim());
+            }
+
+            SendMessage(target, "Unsubscribing", MessageType.UNSUBSCRIBE);
+        }
+
+        virtual public void Notify(Message message)
+        {
+            if (Subscribers.Count > 0)
+            {
+                String targets = String.Join(",", Subscribers.Keys.ToArray());
+                SendMessage(targets, message);
+            }
+        }
+
+        virtual public void Notify(String message, MessageType type = MessageType.INFO)
+        {
+            var msg = new Message();
+            msg.Type = type;
+            msg.Value = message;
+            Notify(msg);
+        }
+
     } //end Client connection class
 }
