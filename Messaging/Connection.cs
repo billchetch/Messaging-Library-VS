@@ -330,6 +330,11 @@ namespace Chetch.Messaging
                 State = oldState;
             }
         }
+
+        public override string ToString()
+        {
+            return ID + " " + Name + " " + State;
+        }
     } //end Connection cloass
 
     abstract public class ServerConnection : Connection

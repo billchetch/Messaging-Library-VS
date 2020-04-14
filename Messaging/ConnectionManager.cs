@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.IO;
+using System.Diagnostics;
 using Chetch.Utilities;
 using Chetch.Application;
 
@@ -240,6 +241,19 @@ namespace Chetch.Messaging
             return null;
         }
 
+        protected List<Connection> GetActiveConnections()
+        {
+            List<Connection> connections = new List<Connection>();
+            foreach (var c in Connections.Values)
+            {
+                if (c.Name != null && c.IsConnected)
+                {
+                    connections.Add(c);
+                }
+            }
+            return connections;
+        }
+
         override public void OnConnectionClosed(Connection cnn, List<Exception> exceptions)
         {
             base.OnConnectionClosed(cnn, exceptions);
@@ -409,6 +423,14 @@ namespace Chetch.Messaging
             response.Type = MessageType.STATUS_RESPONSE;
             response.ResponseID = request.ID;
             response.Target = request.Sender;
+
+            var acnns = GetActiveConnections();
+            var activecnns = new List<String>();
+            foreach(var accn in acnns)
+            {
+                activecnns.Add(accn.ToString());
+            }
+            response.AddValue("ActiveConnections", activecnns);
             return response;
         }
 
@@ -434,6 +456,8 @@ namespace Chetch.Messaging
 
     abstract public class ClientManager : ConnectionManager
     {
+        public static TraceSource Tracing { get; set; } = new TraceSource("Chetch.Messaging.ClientManager");
+
         protected Queue<ConnectionRequest> ConnectionRequestQueue = new Queue<ConnectionRequest>();
 
 
@@ -452,6 +476,7 @@ namespace Chetch.Messaging
         override public void OnConnectionOpened(Connection cnn)
         {
             //empty
+            Tracing.TraceEvent(TraceEventType.Start, 1000, "Connection " + cnn.ID + "opened");
         }
 
         override public void OnConnectionConnected(Connection cnn)

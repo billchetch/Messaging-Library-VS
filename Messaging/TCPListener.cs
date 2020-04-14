@@ -117,5 +117,10 @@ namespace Chetch.Messaging
 
             State = ConnectionState.CLOSED;
         }
-    }
+
+        public override string ToString()
+        {
+            return base.ToString() + " " + IP + ":" + Port;
+        }
+    } //end TCPListener class
 }
