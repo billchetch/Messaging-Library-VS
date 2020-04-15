@@ -11,18 +11,15 @@ namespace Chetch.Messaging
 {
     public class TCPClientManager : ClientManager
     {
-        protected IPAddress IP;
-        protected int BasePort { get; set; } = 11000;
-
-        public TCPClientManager(IPAddress ipAddr, int basePort) : base()
+        
+        public TCPClientManager(IPAddress defaultIP, int defaultPort) : base()
         {
-            if (ipAddr == null)
+            if (defaultIP == null)
             {
                 IPHostEntry ipHostInfo = Dns.GetHostEntry(Dns.GetHostName());
-                ipAddr = ipHostInfo.AddressList[1]; //use IPv4
+                defaultIP = ipHostInfo.AddressList[1]; //use IPv4
             }
-            IP = ipAddr;
-            BasePort = basePort;
+            Servers["default"] = defaultIP + ":" + defaultPort;
         }
 
         public TCPClientManager(int basePort) : this(null, basePort)
@@ -30,32 +27,34 @@ namespace Chetch.Messaging
             //empty
         }
 
-        protected override void InitialisePrimaryConnection()
+        protected override void InitialisePrimaryConnection(String connectionString)
         {
-            base.InitialisePrimaryConnection();
+            base.InitialisePrimaryConnection(connectionString);
             PrimaryConnection.ConnectionTimeout = 10000;
             PrimaryConnection.ActivityTimeout = 5000;
         }
 
-        override public Connection CreatePrimaryConnection()
+        override public Connection CreatePrimaryConnection(String connectionString)
         {
             String id = CreateNewConnectionID();
-            TCPClient client = new TCPClient(id, IP, BasePort);
+            TCPClient client = new TCPClient(id, connectionString);
             return client;
         }
 
         override public Connection CreateConnection(Message message)
         {
-            int port = BasePort;
-            IPAddress ipAddr = IP;
             if (message != null && message.Type == MessageType.CONNECTION_REQUEST_RESPONSE)
             {
-                port = message.GetInt("Port");
-                //TODO: work out how to send IPAddress info
+                int port = message.GetInt("Port");
+                IPAddress ip = IPAddress.Parse(message.GetString("IP"));
+                String id = CreateNewConnectionID();
+                TCPClient client = new TCPClient(id, ip, port, -1, -1);
+                return client;
+            } else
+            {
+                throw new Exception("TCPClientManager::CreateConnection: unable to createc connection from passed message");
             }
-            String id = CreateNewConnectionID();
-            TCPClient client = new TCPClient(id, IP, port, -1, -1);
-            return client;
+            
         }
-    }
+    } //end TCPClientManager class
 }

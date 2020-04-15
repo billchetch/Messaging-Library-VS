@@ -17,6 +17,7 @@ namespace Chetch.Messaging
             public String ID = null;
             public String Name = null;
             public bool Granted = false;
+            public bool Requested = false;
             public Connection Connection = null;
             public Message Request = null;
             private Object _lockSuccessFailure = new Object();
@@ -53,12 +54,46 @@ namespace Chetch.Messaging
                     }
                 }
             }
+
+            public bool Completed
+            {
+                get
+                {
+                    return Succeeded || Failed;
+                }
+            }
+
+            public override string ToString()
+            {
+                String state = "Unknown";
+                if (!Completed)
+                {
+                    if(Requested && !Granted)
+                    {
+                        state = "Requesting";
+                    }
+                    else if(Granted){
+                        state = "Granted";
+                    }
+                    else
+                    {
+                        state = "Declined";
+                    }
+                } else
+                {
+                    state = Succeeded ? "Succeeded" : "Failed";
+                }
+                return String.Format("ID: {0}, Name: {1}, State: {2}", ID, Name, state);
+            }
         }
 
+
+        public String ID { get; internal set; }
         protected Dictionary<String, ConnectionRequest> ConnectionRequests { get; set; } = new Dictionary<String, ConnectionRequest>();
 
         private Connection _primaryConnection = null;
         protected Connection PrimaryConnection { get { return _primaryConnection; } }
+        protected String LastConnectionString { get; set; }
         private Dictionary<String, Connection> _connections = new Dictionary<String, Connection>();
         protected Dictionary<String, Connection> Connections { get { return _connections; } }
         private int _incrementFrom = 0;
@@ -82,13 +117,23 @@ namespace Chetch.Messaging
             */
         }
 
-        virtual protected void InitialisePrimaryConnection()
+        virtual protected void InitialisePrimaryConnection(String connectionString)
         {
             if (_primaryConnection == null)
             {
-                _primaryConnection = CreatePrimaryConnection();
+                _primaryConnection = CreatePrimaryConnection(connectionString);
                 _primaryConnection.Mgr = this;
             }
+            else if (connectionString != null && !connectionString.Equals(LastConnectionString, StringComparison.OrdinalIgnoreCase))
+            {
+                if(_primaryConnection.State != Connection.ConnectionState.CLOSED)
+                {
+                    throw new Exception("Cannot re-initalise primary connection because there is one currently connected");
+                }
+                _primaryConnection = CreatePrimaryConnection(connectionString);
+                _primaryConnection.Mgr = this;
+            }
+            LastConnectionString = connectionString;
         }
 
         protected void CloseConnections()
@@ -138,10 +183,10 @@ namespace Chetch.Messaging
         virtual protected String CreateNewConnectionID()
         {
             _incrementFrom++;
-            return GetHashCode() + "-" + _incrementFrom.ToString();
+            return ID + "-" + _incrementFrom.ToString();
         }
 
-        abstract public Connection CreatePrimaryConnection();
+        abstract public Connection CreatePrimaryConnection(String connectionString);
         abstract public Connection CreateConnection(Message message);
 
         virtual protected ConnectionRequest AddRequest(Message request, Connection cnn = null)
@@ -173,26 +218,41 @@ namespace Chetch.Messaging
 
     abstract public class Server : ConnectionManager
     {
+        public static TraceSource Tracing { get; set; } = new TraceSource("Chetch.Messaging.Server");
+
         public MessageHandler HandleMessage = null;
         public ErrorHandler HandleError = null;
+
+        public Server() : base()
+        {
+            ID = "Server-" + GetHashCode();
+            Tracing.TraceEvent(TraceEventType.Information, 1000, "Created Server with ID {0}", ID);
+        }
 
         virtual public void Start()
         {
             if (PrimaryConnection == null || PrimaryConnection.CanOpen())
             {
-                InitialisePrimaryConnection();
+                Tracing.TraceEvent(TraceEventType.Start, 1000, "Initialising primary connection");
+                InitialisePrimaryConnection(null);
+                if(PrimaryConnection.Tracing == null)
+                {
+                    PrimaryConnection.Tracing = Tracing;
+                }
                 PrimaryConnection.RemainOpen = true;
                 PrimaryConnection.RemainConnected = false;
                 PrimaryConnection.Open();
-            }
+            } 
         }
 
         virtual public void Stop(bool waitForThreads = true)
         {
+            Tracing.TraceEvent(TraceEventType.Suspend, 1000, "Stopping ... waiting for threads {0}", false);
+
             var message = CreateShutdownMessage();
             Broadcast(message);
 
-            if (PrimaryConnection != null)
+            if (PrimaryConnection != null && PrimaryConnection.State != Connection.ConnectionState.CLOSED)
             {
                 PrimaryConnection.Close();
             }
@@ -210,7 +270,8 @@ namespace Chetch.Messaging
 
             while (waitForThreads)
             {
-                //Console.WriteLine("Server::Stop: Checking threads " + threads2check.Count + " threads...");
+                Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Checking {0} threads", threads2check.Count());
+
                 System.Threading.Thread.Sleep(200);
                 List<String> threads2remove = new List<String>();
                 foreach (var xid in threads2check)
@@ -256,20 +317,18 @@ namespace Chetch.Messaging
 
         override public void OnConnectionClosed(Connection cnn, List<Exception> exceptions)
         {
+            Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} closed", cnn.ToString());
             base.OnConnectionClosed(cnn, exceptions);
-            if (cnn == PrimaryConnection && exceptions != null && exceptions.Count > 0)
-            {
-                Stop();
-            }
         }
 
         override public void OnConnectionConnected(Connection cnn)
         {
-            //empty
+            Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} connected", cnn.ToString());
         }
 
         override public void OnConnectionOpened(Connection cnn)
         {
+            Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} opened", cnn.ToString());
             if (cnn != PrimaryConnection)
             {
                 var cnnreq = GetRequest(cnn);
@@ -279,13 +338,17 @@ namespace Chetch.Messaging
                 }
                 else
                 {
-                    throw new Exception("Server::OnConnectionOpened: Cannot find coresponding connection request for connection " + cnn.ID);
+                    var msg = String.Format("Server::OnConnectionOpened: Cannot find coresponding connection request for connection {0}", cnn.ToString());
+                    Tracing.TraceEvent(TraceEventType.Error, 1000, "Exception: {0}", msg);
+                    throw new Exception(msg);
                 }
             }
         }
 
         override protected void HandleConnectionErrors(Connection cnn, List<Exception> exceptions)
         {
+            Tracing.TraceEvent(TraceEventType.Warning, 1000, "HandleConnectionErrors: connection {0} received {1} execeptions", cnn.ToString(), exceptions.Count());
+
             foreach (var e in exceptions)
             {
                 HandleError?.Invoke(cnn, e);
@@ -294,7 +357,6 @@ namespace Chetch.Messaging
 
         override public void HandleReceivedMessage(Connection cnn, Message message)
         {
-            //base.HandleReceivedMessage(cnn, message);
             HandleMessage?.Invoke(cnn, message);
 
             Message response = null;
@@ -318,7 +380,10 @@ namespace Chetch.Messaging
                             newCnn = CreateConnection(message);
                             if (newCnn != null)
                             {
+                                Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Created connection for {0}", message.Sender);
+
                                 newCnn.Mgr = this;
+                                newCnn.Tracing = Tracing;
                                 newCnn.RemainConnected = true;
                                 newCnn.RemainOpen = false;
                                 newCnn.Name = message.Sender;
@@ -336,10 +401,12 @@ namespace Chetch.Messaging
                             response = CreateRequestResponse(message, null);
                             response.AddValue("Declined", declined);
                             PrimaryConnection.SendMessage(response);
+                            Tracing.TraceEvent(TraceEventType.Warning, 1000, "Declined connection request for {0} because {1}", message.Sender, declined);
                         }
                         else
                         {
                             ConnectionRequest cnnreq = AddRequest(message, newCnn);
+                            Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Connection for request {0} granted", cnnreq.ToString());
                             newCnn.Open();
 
                             //now we wait until the we have a successful opening
@@ -352,13 +419,19 @@ namespace Chetch.Messaging
                             if (cnnreq.Failed)
                             {
                                 response.AddValue("Declined", "Connection request failed");
+                                Tracing.TraceEvent(TraceEventType.Warning, 1000, "Connection request {0} failed", cnnreq.ToString());
+                            } else
+                            {
+                                Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Connection for request {0} opened", cnnreq.ToString());
                             }
                             PrimaryConnection.SendMessage(response);
                         }
                     }
                     else
                     {
-                        throw new Exception("Server: received connection request not on primary connection");
+                        var msg = String.Format("Server: received connection request not on primary connection");
+                        Tracing.TraceEvent(TraceEventType.Error, 1000, "Exception: {0}", msg);
+                        throw new Exception(msg);
                     }
                     break;
 
@@ -423,14 +496,17 @@ namespace Chetch.Messaging
             response.Type = MessageType.STATUS_RESPONSE;
             response.ResponseID = request.ID;
             response.Target = request.Sender;
-
+            response.Sender = ID;
+            response.AddValue("ServerID", ID);
             var acnns = GetActiveConnections();
             var activecnns = new List<String>();
             foreach(var accn in acnns)
             {
                 activecnns.Add(accn.ToString());
             }
+            response.AddValue("ActiveConnectionsCount", activecnns.Count);
             response.AddValue("ActiveConnections", activecnns);
+            response.AddValue("MaxConnections", MaxConnections);
             return response;
         }
 
@@ -439,12 +515,23 @@ namespace Chetch.Messaging
             var response = new Message();
             response.Type = MessageType.SHUTDOWN;
             response.Value = "Server is shutting down";
+            response.Sender = ID;
             return response;
         }
 
         virtual public void Broadcast(Message message)
         {
-            foreach (var cnn in Connections.Values)
+            IEnumerable<Connection> listeners;
+            if(message.Type == MessageType.SHUTDOWN)
+            {
+                listeners = new List<Connection>(Connections.Values);
+            } else
+            {
+                listeners = Connections.Values;
+            }
+            
+
+            foreach (var cnn in listeners)
             {
                 if (cnn.IsConnected)
                 {
@@ -459,24 +546,38 @@ namespace Chetch.Messaging
         public static TraceSource Tracing { get; set; } = new TraceSource("Chetch.Messaging.ClientManager");
 
         protected Queue<ConnectionRequest> ConnectionRequestQueue = new Queue<ConnectionRequest>();
+        protected Dictionary<String, String> Servers = new Dictionary<String, String>();
 
 
         public ClientManager() : base()
         {
-
+            ID = "ClientManager-" + GetHashCode();
+            Tracing.TraceEvent(TraceEventType.Information, 1000, "Created Client Manager with ID {0}", ID);
         }
 
-        override protected void InitialisePrimaryConnection()
+        override protected void InitialisePrimaryConnection(String connectionString)
         {
-            base.InitialisePrimaryConnection();
+            if (PrimaryConnection == null)
+            {
+                Tracing.TraceEvent(TraceEventType.Information, 1000, "Initialising primary connection");
+            } else if(connectionString != null && connectionString.Equals(LastConnectionString, StringComparison.OrdinalIgnoreCase))
+            {
+                Tracing.TraceEvent(TraceEventType.Information, 1000, "Re-initialising primary connection");
+            }
+
+            base.InitialisePrimaryConnection(connectionString);
+            if (PrimaryConnection.Tracing == null)
+            {
+                PrimaryConnection.Tracing = Tracing;
+            }
             PrimaryConnection.RemainOpen = false;
             PrimaryConnection.RemainConnected = false;
+
         }
 
         override public void OnConnectionOpened(Connection cnn)
         {
-            //empty
-            Tracing.TraceEvent(TraceEventType.Start, 1000, "Connection " + cnn.ID + "opened");
+            Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} opened", cnn.ToString());
         }
 
         override public void OnConnectionConnected(Connection cnn)
@@ -484,7 +585,10 @@ namespace Chetch.Messaging
             if (cnn == PrimaryConnection && ConnectionRequestQueue.Count > 0)
             {
                 var cnnreq = ConnectionRequestQueue.Dequeue();
+                cnnreq.Requested = true;
                 PrimaryConnection.SendMessage(cnnreq.Request);
+
+                Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Requesting connection {0}", cnnreq.ToString());
             }
             else
             {
@@ -495,7 +599,7 @@ namespace Chetch.Messaging
 
         override protected void HandleConnectionErrors(Connection cnn, List<Exception> exceptions)
         {
-            //empty
+            Tracing.TraceEvent(TraceEventType.Warning, 1000, "HandleConnectionErrors: connection {0} received {1} execeptions", cnn.ToString(), exceptions.Count());
         }
 
         override public void HandleReceivedMessage(Connection cnn, Message message)
@@ -506,18 +610,22 @@ namespace Chetch.Messaging
                     if (cnn == PrimaryConnection && Connections.Count + 1 < MaxConnections)
                     {
                         ConnectionRequest cnnreq = GetRequest(message.ResponseID);
+                        Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Received request respponse for request {0}", cnnreq.ToString());
+
                         //TODO: check if indeed request is granted if
                         cnnreq.Granted = true;
                         var newCnn = CreateConnection(message);
                         if (newCnn != null)
                         {
                             newCnn.Mgr = this;
+                            newCnn.Tracing = Tracing;
                             newCnn.RemainConnected = true;
                             newCnn.RemainOpen = false;
                             newCnn.Name = cnnreq.Name;
                             Connections[newCnn.ID] = newCnn;
                             cnnreq.Connection = newCnn;
                             newCnn.Open();
+                            Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Opening connection for request {0}", cnnreq.ToString());
                         }
                         else
                         {
@@ -542,11 +650,32 @@ namespace Chetch.Messaging
 
         virtual public ClientConnection Connect(String name, int timeout = -1)
         {
-            InitialisePrimaryConnection();
+            if (Servers.ContainsKey("default"))
+            {
+                return Connect("default", name, timeout);
+            } else
+            {
+                throw new Exception("Cannot find default server connection string");
+            }
+        }
+
+        virtual public ClientConnection Connect(String connectionString, String name, int timeout = -1)
+        {
+            if (Servers.ContainsKey(connectionString))
+            {
+                connectionString = Servers[connectionString];
+            }
+            else
+            {
+                Servers[connectionString] = connectionString;
+            }
+
+            InitialisePrimaryConnection(connectionString);
 
             var cnnreq = AddRequest(CreateConnectionRequest(name));
             cnnreq.Name = name;
             ConnectionRequestQueue.Enqueue(cnnreq);
+
             if (ConnectionRequestQueue.Peek() == cnnreq)
             {
                 PrimaryConnection.Open();
@@ -559,11 +688,15 @@ namespace Chetch.Messaging
                 System.Threading.Thread.Sleep(200);
                 if (timeout > 0 && ((DateTime.Now.Ticks - started) / TimeSpan.TicksPerMillisecond) > timeout)
                 {
-                    throw new TimeoutException("Timeout of " + timeout + "ms exceeded");
+                    var msg = String.Format("Cancelling connection request {0} due to timeout of {1}", cnnreq.ToString(), timeout);
+                    Tracing.TraceEvent(TraceEventType.Error, 1000, "Connect exception: {0}", msg);
+                    throw new TimeoutException(msg);
                 }
                 if (cnnreq.Failed)
                 {
-                    throw new Exception("Connection request failed");
+                    var msg = String.Format("Failed request: {0} ", cnnreq.ToString());
+                    Tracing.TraceEvent(TraceEventType.Error, 1000, "Connect exception: {0}", msg);
+                    throw new Exception(msg);
                 }
 
                 connected = cnnreq.Succeeded;

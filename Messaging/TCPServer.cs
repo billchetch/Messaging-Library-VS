@@ -25,9 +25,9 @@ namespace Chetch.Messaging
             BasePort = basePort;
         }
 
-        protected override void InitialisePrimaryConnection()
+        protected override void InitialisePrimaryConnection(String connectionString)
         {
-            base.InitialisePrimaryConnection();
+            base.InitialisePrimaryConnection(connectionString);
             PrimaryConnection.ConnectionTimeout = -1;
             PrimaryConnection.ActivityTimeout = 10000;
         }
@@ -37,7 +37,7 @@ namespace Chetch.Messaging
 
         }
 
-        override public Connection CreatePrimaryConnection()
+        override public Connection CreatePrimaryConnection(String connectionString)
         {
             String id = CreateNewConnectionID();
             TCPListener listener = new TCPListener(id, IP, BasePort);
@@ -70,6 +70,7 @@ namespace Chetch.Messaging
             {
                 TCPListener listener = (TCPListener)newCnn;
                 response.AddValue("Port", listener.Port);
+                response.AddValue("IP", listener.IP.ToString());
             }
             response.DefaultEncoding = MessageEncoding.JSON;
             return response;

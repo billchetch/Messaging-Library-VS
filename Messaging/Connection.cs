@@ -4,8 +4,10 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.IO;
+using System.Diagnostics;
 using Chetch.Utilities;
 using Chetch.Application;
+
 
 
 namespace Chetch.Messaging
@@ -87,6 +89,8 @@ namespace Chetch.Messaging
         public bool RemainConnected { get; set; } = false;
         public bool RemainOpen { get; set; } = false;
 
+        public TraceSource Tracing { get; set; } = null;
+
 
         public Connection()
         {
@@ -165,11 +169,11 @@ namespace Chetch.Messaging
                 {
                     if (_startXS != null && !_startXS.IsFinished)
                     {
+                        Tracing?.TraceEvent(TraceEventType.Information, 1000, "Connection::Monitor:Exeuction thread is of state closed but is not finished, attepting to terminate");
                         ThreadExecutionManager.Terminate(_startXS.ID);
                     }
                     break;
                 }
-
             }
         }
 
@@ -364,6 +368,8 @@ namespace Chetch.Messaging
             if (Name != null && message.Target == null)
             {
                 //if this connection has a name then set the Target to the name for clarity
+                //this is done because the Name is normally set to the requester of the connection (i.e. client)
+                //See ConnectionManager -> Server and how it creates and initialises connections to clients
                 message.Target = Name;
             }
             base.SendMessage(message);

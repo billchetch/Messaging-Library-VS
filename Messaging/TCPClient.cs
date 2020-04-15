@@ -26,6 +26,17 @@ namespace Chetch.Messaging
             Port = port;
         }
 
+        public TCPClient(String cnnId, String connectionString, int cnnTimeout = -1, int actTimeout = -1) : base(cnnId, cnnTimeout, actTimeout)
+        {
+            var parts = connectionString.Split(':');
+            if (parts.Length != 2) throw new Exception(String.Format("Connection string{0} is not valid.", connectionString));
+
+            IPAddress ip = IPAddress.Parse(parts[0]);
+            int port = System.Convert.ToInt32(parts[1]);
+            IP = ip;
+            Port = port;
+        }
+
         public TCPClient(String cnnId, IPAddress ipAddr, int port) : this(cnnId, ipAddr, port, -1, -1)
         {
             //empty
