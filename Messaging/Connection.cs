@@ -120,6 +120,8 @@ namespace Chetch.Messaging
                     _startXS = ThreadExecutionManager.Execute(ID, action);
                     if (_startXS == null) throw new Exception("Connection::Start: Unable to create thread for connection " + ID);
                     ThreadExecutionManager.Execute(monitorId, this.Monitor);
+                    Tracing?.TraceEvent(TraceEventType.Verbose, 2000, "Connection::Start: Created execution thread {0} and monitor thrad{1}", ID, monitorId);
+
                     break;
                 }
                 else
@@ -169,7 +171,7 @@ namespace Chetch.Messaging
                 {
                     if (_startXS != null && !_startXS.IsFinished)
                     {
-                        Tracing?.TraceEvent(TraceEventType.Information, 1000, "Connection::Monitor:Exeuction thread is of state closed but is not finished, attepting to terminate");
+                        Tracing?.TraceEvent(TraceEventType.Information, 2000, "Connection::Monitor: Exeuction thread is of state closed but is not finished, attepting to terminate");
                         ThreadExecutionManager.Terminate(_startXS.ID);
                     }
                     break;
@@ -181,6 +183,8 @@ namespace Chetch.Messaging
         {
             if (!CanOpen()) return false;
 
+            Tracing?.TraceEvent(TraceEventType.Verbose, 2000, "Connection::Close: {0} opening", ID);
+
             State = ConnectionState.OPENING;
             Stream = null; //
             return true;
@@ -188,6 +192,8 @@ namespace Chetch.Messaging
 
         virtual public void Close()
         {
+            Tracing?.TraceEvent(TraceEventType.Verbose, 2000, "Connection::Close: {0} started closing", ID);
+
             State = ConnectionState.CLOSING;
 
             if (Stream != null)
