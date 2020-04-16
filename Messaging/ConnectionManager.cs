@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.IO;
 using System.Diagnostics;
 using Chetch.Utilities;
+using Chetch.Utilities.Config;
 using Chetch.Application;
 
 namespace Chetch.Messaging
@@ -218,7 +219,7 @@ namespace Chetch.Messaging
 
     abstract public class Server : ConnectionManager
     {
-        public static TraceSource Tracing { get; set; } = new TraceSource("Chetch.Messaging.Server");
+        public static TraceSource Tracing { get; set; } = TraceSourceManager.GetInstance("Chetch.Messaging.Server");
 
         public MessageHandler HandleMessage = null;
         public ErrorHandler HandleError = null;
@@ -543,7 +544,7 @@ namespace Chetch.Messaging
 
     abstract public class ClientManager : ConnectionManager
     {
-        public static TraceSource Tracing { get; set; } = new TraceSource("Chetch.Messaging.ClientManager");
+        public static TraceSource Tracing { get; set; } = TraceSourceManager.GetInstance("Chetch.Messaging.ClientManager");
 
         protected Queue<ConnectionRequest> ConnectionRequestQueue = new Queue<ConnectionRequest>();
         protected Dictionary<String, String> Servers = new Dictionary<String, String>();
