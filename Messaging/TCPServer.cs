@@ -11,6 +11,15 @@ namespace Chetch.Messaging
 {
     public class TCPServer : Server
     {
+        public static String LocalIP
+        {
+            get
+            {
+                IPHostEntry ipHostInfo = Dns.GetHostEntry(Dns.GetHostName());
+                return  ipHostInfo.AddressList[1].ToString(); //use IPv4
+            }
+        }
+
         protected IPAddress IP;
         protected int BasePort { get; set; } = 11000;
 
@@ -23,13 +32,6 @@ namespace Chetch.Messaging
             }
             IP = ipAddr;
             BasePort = basePort;
-        }
-
-        protected override void InitialisePrimaryConnection(String connectionString)
-        {
-            base.InitialisePrimaryConnection(connectionString);
-            PrimaryConnection.ConnectionTimeout = -1;
-            PrimaryConnection.ActivityTimeout = 10000;
         }
 
         public TCPServer(int basePort) : this(null, basePort)

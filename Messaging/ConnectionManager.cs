@@ -230,18 +230,34 @@ namespace Chetch.Messaging
             Tracing.TraceEvent(TraceEventType.Information, 1000, "Created Server with ID {0}", ID);
         }
 
+        override protected void InitialisePrimaryConnection(String connectionString)
+        {
+            if (PrimaryConnection == null)
+            {
+                Tracing.TraceEvent(TraceEventType.Information, 1000, "Initialising primary connection");
+            }
+            else if (connectionString != null && connectionString.Equals(LastConnectionString, StringComparison.OrdinalIgnoreCase))
+            {
+                Tracing.TraceEvent(TraceEventType.Information, 1000, "Re-initialising primary connection");
+            }
+
+            base.InitialisePrimaryConnection(connectionString);
+            if (PrimaryConnection.Tracing == null)
+            {
+                PrimaryConnection.Tracing = Tracing;
+            }
+            PrimaryConnection.RemainOpen = true;
+            PrimaryConnection.RemainConnected = false;
+            PrimaryConnection.ConnectionTimeout = -1;
+            PrimaryConnection.ActivityTimeout = 10000;
+        }
+
         virtual public void Start()
         {
             if (PrimaryConnection == null || PrimaryConnection.CanOpen())
             {
                 Tracing.TraceEvent(TraceEventType.Start, 1000, "Initialising primary connection");
                 InitialisePrimaryConnection(null);
-                if(PrimaryConnection.Tracing == null)
-                {
-                    PrimaryConnection.Tracing = Tracing;
-                }
-                PrimaryConnection.RemainOpen = true;
-                PrimaryConnection.RemainConnected = false;
                 PrimaryConnection.Open();
             } 
         }
@@ -388,6 +404,8 @@ namespace Chetch.Messaging
                                 newCnn.RemainConnected = true;
                                 newCnn.RemainOpen = false;
                                 newCnn.Name = message.Sender;
+                                newCnn.ConnectionTimeout = DefaultConnectionTimeout;
+                                newCnn.ActivityTimeout = DefaultActivityTimeout;
                                 Connections[newCnn.ID] = newCnn;
                             }
                             else
@@ -542,13 +560,16 @@ namespace Chetch.Messaging
         }
     } //end Server class
 
-    abstract public class ClientManager : ConnectionManager
+    /// <summary>
+    /// ClientManager class
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    abstract public class ClientManager<T> : ConnectionManager where T : ClientConnection, new()
     {
         public static TraceSource Tracing { get; set; } = TraceSourceManager.GetInstance("Chetch.Messaging.ClientManager");
 
         protected Queue<ConnectionRequest> ConnectionRequestQueue = new Queue<ConnectionRequest>();
         protected Dictionary<String, String> Servers = new Dictionary<String, String>();
-
 
         public ClientManager() : base()
         {
@@ -573,9 +594,33 @@ namespace Chetch.Messaging
             }
             PrimaryConnection.RemainOpen = false;
             PrimaryConnection.RemainConnected = false;
-
+            PrimaryConnection.ConnectionTimeout = 10000;
+            PrimaryConnection.ActivityTimeout = 5000;
         }
 
+        override public Connection CreatePrimaryConnection(String connectionString)
+        {
+            T client = new T();
+            client.ID = CreateNewConnectionID();
+            client.ParseConnectionString(connectionString);
+            return client;
+        }
+
+        override public Connection CreateConnection(Message message)
+        {
+            if (message != null && message.Type == MessageType.CONNECTION_REQUEST_RESPONSE)
+            {
+                T client = new T();
+                client.ID = CreateNewConnectionID();
+                client.ParseMessage(message);
+                return client;
+            }
+            else
+            {
+                throw new Exception("ClientManager::CreateConnection: unable to createc connection from passed message");
+            }
+
+        }
         override public void OnConnectionOpened(Connection cnn)
         {
             Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} opened", cnn.ToString());
@@ -622,6 +667,8 @@ namespace Chetch.Messaging
                             newCnn.Tracing = Tracing;
                             newCnn.RemainConnected = true;
                             newCnn.RemainOpen = false;
+                            newCnn.ConnectionTimeout = DefaultConnectionTimeout;
+                            newCnn.ActivityTimeout = DefaultActivityTimeout;
                             newCnn.Name = cnnreq.Name;
                             Connections[newCnn.ID] = newCnn;
                             cnnreq.Connection = newCnn;
@@ -649,14 +696,20 @@ namespace Chetch.Messaging
             return request;
         }
 
+
+        public void AddServer(String serverName, String connectionString)
+        {
+            Servers[serverName] = connectionString;
+        }
+
         virtual public ClientConnection Connect(String name, int timeout = -1)
         {
             if (Servers.ContainsKey("default"))
             {
-                return Connect("default", name, timeout);
+                return Connect(Servers["default"], name, timeout);
             } else
             {
-                throw new Exception("Cannot find default server connection string");
+                throw new Exception("ClientManager::Connect: No default server set");
             }
         }
 

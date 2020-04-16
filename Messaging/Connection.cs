@@ -385,16 +385,20 @@ namespace Chetch.Messaging
 
     abstract public class ClientConnection : Connection
     {
+
         public MessageHandler HandleMessage = null;
         public ErrorHandler HandleError = null;
 
         protected Dictionary<String, Message> Subscribers = new Dictionary<string, Message>();
         protected Dictionary<String, Message> Subscriptions = new Dictionary<string, Message>();
 
-        public ClientConnection(String cnnId, int cnnTimeout, int actTimeout) : base(cnnId, cnnTimeout, actTimeout)
+        public ClientConnection() : base()
         {
             RemainOpen = false;
         }
+
+        public abstract void ParseConnectionString(String connectionString);
+        public abstract void ParseMessage(Message message);
 
         abstract protected void Connect();
 

@@ -15,18 +15,13 @@ namespace Chetch.Messaging
         public int Port { get; set; }
         private TcpClient _client;
 
-        public TCPClient(String cnnId, IPAddress ipAddr, int port, int cnnTimeout, int actTimeout) : base(cnnId, cnnTimeout, actTimeout)
+
+        public TCPClient() : base()
         {
-            if (ipAddr == null)
-            {
-                IPHostEntry ipHostInfo = Dns.GetHostEntry(Dns.GetHostName());
-                ipAddr = ipHostInfo.AddressList[1];
-            }
-            IP = ipAddr;
-            Port = port;
+            //empty   
         }
 
-        public TCPClient(String cnnId, String connectionString, int cnnTimeout = -1, int actTimeout = -1) : base(cnnId, cnnTimeout, actTimeout)
+        override public void ParseConnectionString(String connectionString)
         {
             var parts = connectionString.Split(':');
             if (parts.Length != 2) throw new Exception(String.Format("Connection string{0} is not valid.", connectionString));
@@ -37,19 +32,12 @@ namespace Chetch.Messaging
             Port = port;
         }
 
-        public TCPClient(String cnnId, IPAddress ipAddr, int port) : this(cnnId, ipAddr, port, -1, -1)
+        override public void ParseMessage(Message message)
         {
-            //empty
-        }
-
-        public TCPClient(IPAddress ipAddr, int port) : this(null, ipAddr, port)
-        {
-            //empty   
-        }
-
-        public TCPClient(int port) : this(null, port)
-        {
-            //empty   
+            int port = message.GetInt("Port");
+            IPAddress ip = IPAddress.Parse(message.GetString("IP"));
+            IP = ip;
+            Port = port;
         }
 
         override public void Close()
