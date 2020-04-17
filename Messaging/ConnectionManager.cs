@@ -20,7 +20,8 @@ namespace Chetch.Messaging
             public bool Granted = false;
             public bool Requested = false;
             public Connection Connection = null;
-            public Message Request = null;
+            public Message Request = null; //sent by the requester to the granter
+            public Message Response = null; //sent by granter to the requeser 
             private Object _lockSuccessFailure = new Object();
             private bool _succeeded = false;
             public bool Succeeded
@@ -66,7 +67,7 @@ namespace Chetch.Messaging
 
             public override string ToString()
             {
-                String state = "Unknown";
+                String state = "Undetermined";
                 if (!Completed)
                 {
                     if(Requested && !Granted)
@@ -76,10 +77,6 @@ namespace Chetch.Messaging
                     else if(Granted){
                         state = "Granted";
                     }
-                    else
-                    {
-                        state = "Declined";
-                    }
                 } else
                 {
                     state = Succeeded ? "Succeeded" : "Failed";
@@ -88,6 +85,8 @@ namespace Chetch.Messaging
             }
         }
 
+        public MessageHandler HandleMessage = null;
+        public ErrorHandler HandleError = null;
 
         public String ID { get; internal set; }
         protected Dictionary<String, ConnectionRequest> ConnectionRequests { get; set; } = new Dictionary<String, ConnectionRequest>();
@@ -170,7 +169,24 @@ namespace Chetch.Messaging
 
             if (exceptions.Count > 0)
             {
-                var cnnreq = GetRequest(cnn);
+                ConnectionRequest cnnreq = null;
+                if (cnn == PrimaryConnection)
+                {
+                    foreach(var e in exceptions)
+                    {
+                        if(e is MessageHandlingException)
+                        {
+                            var m = ((MessageHandlingException)e).Message;
+                            if(m != null && m.Type == MessageType.CONNECTION_REQUEST_RESPONSE)
+                            {
+                                cnnreq = GetRequest(m.ResponseID);
+                            }
+                        }
+                    }
+
+                } else {
+                    cnnreq = GetRequest(cnn);
+                }
                 if (cnnreq != null && !cnnreq.Succeeded)
                 {
                     cnnreq.Failed = true;
@@ -219,10 +235,18 @@ namespace Chetch.Messaging
 
     abstract public class Server : ConnectionManager
     {
-        public static TraceSource Tracing { get; set; } = TraceSourceManager.GetInstance("Chetch.Messaging.Server");
+        public enum CommandType
+        {
+            NOT_SET,
+            REPORT_STATUS,
+            RESTART,
+            SET_TRACE_LEVEL,
+            RESTORE_TRACE_LEVEL,
+            START_TRACE_TO_CLIENT,
+            END_TRACE_TO_CLIENT
+        }
 
-        public MessageHandler HandleMessage = null;
-        public ErrorHandler HandleError = null;
+        public static TraceSource Tracing { get; set; } = TraceSourceManager.GetInstance("Chetch.Messaging.Server");
 
         public Server() : base()
         {
@@ -250,6 +274,7 @@ namespace Chetch.Messaging
             PrimaryConnection.RemainConnected = false;
             PrimaryConnection.ConnectionTimeout = -1;
             PrimaryConnection.ActivityTimeout = 10000;
+            PrimaryConnection.ServerID = ID;
         }
 
         virtual public void Start()
@@ -307,6 +332,13 @@ namespace Chetch.Messaging
             }
         }
 
+        public void Restart()
+        {
+            Stop();
+            System.Threading.Thread.Sleep(2000);
+            Start();
+        }
+
         protected Connection GetNamedConnection(String name)
         {
             foreach (var c in Connections.Values)
@@ -345,12 +377,12 @@ namespace Chetch.Messaging
 
         override public void OnConnectionOpened(Connection cnn)
         {
-            Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} opened", cnn.ToString());
             if (cnn != PrimaryConnection)
             {
                 var cnnreq = GetRequest(cnn);
                 if (cnnreq != null)
                 {
+                    Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} opened successfully from request {1}", cnn.ToString(), cnnreq.ToString());
                     cnnreq.Succeeded = true;
                 }
                 else
@@ -359,6 +391,10 @@ namespace Chetch.Messaging
                     Tracing.TraceEvent(TraceEventType.Error, 1000, "Exception: {0}", msg);
                     throw new Exception(msg);
                 }
+            } else
+            {
+                Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Primary Connection {0} Opened", cnn.ToString());
+
             }
         }
 
@@ -377,6 +413,42 @@ namespace Chetch.Messaging
             HandleMessage?.Invoke(cnn, message);
 
             Message response = null;
+
+            //We determine first the 'target' of the message
+            bool relayMessage = message.Target != null && message.Target != ID;
+            if (relayMessage)
+            {
+                switch (message.Type)
+                {
+                    case MessageType.CONNECTION_REQUEST:
+                        response = CreateErrorMessage(String.Format("{0} is not a valid message type", message.Type), cnn);
+                        cnn.SendMessage(response);
+                        break;
+
+                    default:
+                        var targets = message.Target.Split(',');
+                        foreach (var target in targets)
+                        {
+                            var tgt = target.Trim();
+                            var ncnn = GetNamedConnection(tgt);
+                            if (ncnn != null)
+                            {
+                                message.Target = tgt;
+                                ncnn.SendMessage(message);
+                            }
+                            else
+                            {
+                                response = CreateErrorMessage(tgt + " is not connected.", cnn);
+                                cnn.SendMessage(response);
+                            }
+                        }
+                        break;
+                } //end switch
+                return;
+            }
+
+
+            //Here we know the message is to be handled by the Server (relayMessage = false)
             switch (message.Type)
             {
                 case MessageType.CONNECTION_REQUEST:
@@ -406,6 +478,7 @@ namespace Chetch.Messaging
                                 newCnn.Name = message.Sender;
                                 newCnn.ConnectionTimeout = DefaultConnectionTimeout;
                                 newCnn.ActivityTimeout = DefaultActivityTimeout;
+                                newCnn.ServerID = ID;
                                 Connections[newCnn.ID] = newCnn;
                             }
                             else
@@ -444,6 +517,9 @@ namespace Chetch.Messaging
                                 Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Connection for request {0} opened", cnnreq.ToString());
                             }
                             PrimaryConnection.SendMessage(response);
+
+                            //Finally ew can remove the connection request
+                            ConnectionRequests.Remove(cnnreq.ID);
                         }
                     }
                     else
@@ -459,27 +535,38 @@ namespace Chetch.Messaging
                     cnn.SendMessage(response);
                     break;
 
-                default:
-                    //relay messages to other clients
-                    if (message.Target != null)
+                case MessageType.COMMAND:
+                    CommandType cmdType = CommandType.NOT_SET;
+                    try
                     {
-                        var targets = message.Target.Split(',');
-                        foreach (var target in targets)
-                        {
-                            var tgt = target.Trim();
-                            var ncnn = GetNamedConnection(tgt);
-                            if (ncnn != null)
-                            {
-                                message.Target = tgt;
-                                ncnn.SendMessage(message);
-                            }
-                            else
-                            {
-                                var emsg = CreateErrorMessage(tgt + " is not connected.", cnn);
-                                cnn.SendMessage(emsg);
-                            }
-                        }
+                        cmdType = (CommandType)message.SubType;
+                    } catch (Exception e)
+                    {
+                        response = CreateErrorMessage(String.Format("Unrecognised command {0}", message.SubType), cnn);
+                        Tracing.TraceEvent(TraceEventType.Error, 1000, e.Message);
+                        cnn.SendMessage(response);
+                        return;
                     }
+
+                    switch (cmdType)
+                    {
+                        case CommandType.RESTART:
+                            ThreadExecutionManager.Execute(ID + "-Restart", this.Restart);
+                            break;
+
+                        case CommandType.REPORT_STATUS:
+                            response = CreateStatusResponse(message, cnn);
+                            cnn.SendMessage(response);
+                            break;
+
+                        case CommandType.SET_TRACE_LEVEL:
+                            break;
+                    }
+                    break;
+
+                default:
+                    response = CreateErrorMessage(String.Format("{0} is not a valid message type", message.Type), cnn);
+                    cnn.SendMessage(response);
                     break;
             }
         }
@@ -497,6 +584,7 @@ namespace Chetch.Messaging
             var response = new Message();
             response.Type = MessageType.CONNECTION_REQUEST_RESPONSE;
             response.ResponseID = request.ID;
+            response.Sender = ID;
             if (newCnn != null)
             {
                 response.Target = request.Sender;
@@ -563,13 +651,26 @@ namespace Chetch.Messaging
     /// <summary>
     /// ClientManager class
     /// </summary>
-    /// <typeparam name="T"></typeparam>
+    /// <typeparam name="T">The type of client connection</typeparam>
     abstract public class ClientManager<T> : ConnectionManager where T : ClientConnection, new()
     {
+        protected class ServerData
+        {
+            public String ID; //ID given by server
+            public String Name; //name according to client
+            public String ConnectionString;
+            
+            public ServerData(String name, String cnnString)
+            {
+                Name = name;
+                ConnectionString = cnnString;
+            }
+        }
+
         public static TraceSource Tracing { get; set; } = TraceSourceManager.GetInstance("Chetch.Messaging.ClientManager");
 
         protected Queue<ConnectionRequest> ConnectionRequestQueue = new Queue<ConnectionRequest>();
-        protected Dictionary<String, String> Servers = new Dictionary<String, String>();
+        protected Dictionary<String, ServerData> Servers = new Dictionary<String, ServerData>();
 
         public ClientManager() : base()
         {
@@ -643,9 +744,20 @@ namespace Chetch.Messaging
             }
         }
 
+        override public void OnConnectionClosed(Connection cnn, List<Exception> exceptions)
+        {
+            Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} closed", cnn.ToString());
+            base.OnConnectionClosed(cnn, exceptions);
+        }
+
         override protected void HandleConnectionErrors(Connection cnn, List<Exception> exceptions)
         {
             Tracing.TraceEvent(TraceEventType.Warning, 1000, "HandleConnectionErrors: connection {0} received {1} execeptions", cnn.ToString(), exceptions.Count());
+
+            foreach (var e in exceptions)
+            {
+                HandleError?.Invoke(cnn, e);
+            }
         }
 
         override public void HandleReceivedMessage(Connection cnn, Message message)
@@ -653,9 +765,11 @@ namespace Chetch.Messaging
             switch (message.Type)
             {
                 case MessageType.CONNECTION_REQUEST_RESPONSE:
-                    if (cnn == PrimaryConnection && Connections.Count + 1 < MaxConnections)
+                    if (cnn == PrimaryConnection)
                     {
+                        //get connection request and set the response
                         ConnectionRequest cnnreq = GetRequest(message.ResponseID);
+                        cnnreq.Response = message;
                         Tracing.TraceEvent(TraceEventType.Verbose, 1000, "Received request respponse for request {0}", cnnreq.ToString());
 
                         //TODO: check if indeed request is granted if
@@ -670,6 +784,7 @@ namespace Chetch.Messaging
                             newCnn.ConnectionTimeout = DefaultConnectionTimeout;
                             newCnn.ActivityTimeout = DefaultActivityTimeout;
                             newCnn.Name = cnnreq.Name;
+                            newCnn.ServerID = message.Sender;
                             Connections[newCnn.ID] = newCnn;
                             cnnreq.Connection = newCnn;
                             newCnn.Open();
@@ -699,14 +814,14 @@ namespace Chetch.Messaging
 
         public void AddServer(String serverName, String connectionString)
         {
-            Servers[serverName] = connectionString;
-        }
+            Servers[serverName] = new ServerData(serverName, connectionString);
+         }
 
         virtual public ClientConnection Connect(String name, int timeout = -1)
         {
             if (Servers.ContainsKey("default"))
             {
-                return Connect(Servers["default"], name, timeout);
+                return Connect("default", name, timeout);
             } else
             {
                 throw new Exception("ClientManager::Connect: No default server set");
@@ -715,13 +830,19 @@ namespace Chetch.Messaging
 
         virtual public ClientConnection Connect(String connectionString, String name, int timeout = -1)
         {
+            if (Connections.Count == MaxConnections)
+            {
+                throw new Exception("Cannot create more than " + MaxConnections + " connections");
+            }
+
+            String serverKey = connectionString;
             if (Servers.ContainsKey(connectionString))
             {
-                connectionString = Servers[connectionString];
+                connectionString = Servers[connectionString].ConnectionString;
             }
             else
             {
-                Servers[connectionString] = connectionString;
+                AddServer(connectionString, connectionString);
             }
 
             InitialisePrimaryConnection(connectionString);
@@ -729,7 +850,7 @@ namespace Chetch.Messaging
             var cnnreq = AddRequest(CreateConnectionRequest(name));
             cnnreq.Name = name;
             ConnectionRequestQueue.Enqueue(cnnreq);
-
+            
             if (ConnectionRequestQueue.Peek() == cnnreq)
             {
                 PrimaryConnection.Open();
@@ -737,27 +858,46 @@ namespace Chetch.Messaging
 
             long started = DateTime.Now.Ticks;
             bool connected = false;
-            do
+            bool waited2long = false;
+            try
+            { 
+                do
+                {
+                    System.Threading.Thread.Sleep(200);
+                    long elapsed = ((DateTime.Now.Ticks - started) / TimeSpan.TicksPerMillisecond);
+                    if (timeout > 0 && elapsed > timeout)
+                    {
+                        var msg = String.Format("Cancelling connection request {0} due to timeout of {1}", cnnreq.ToString(), timeout);
+                        Tracing.TraceEvent(TraceEventType.Error, 1000, "Connect exception: {0}", msg);
+                        throw new TimeoutException(msg);
+                    }
+                    if (cnnreq.Failed)
+                    {
+                        var msg = String.Format("Failed request: {0} ", cnnreq.ToString());
+                        Tracing.TraceEvent(TraceEventType.Error, 1000, "Connect exception: {0}", msg);
+                        throw new Exception(msg);
+                    }
+
+                    if(elapsed > 20000 && !waited2long)
+                    {
+                        Tracing.TraceEvent(TraceEventType.Warning, 1000, "Already waiting to connect for {0} seconds!", elapsed/1000);
+                        waited2long = true;
+                    }
+
+                    connected = cnnreq.Succeeded;
+                    System.Threading.Thread.Sleep(200);
+                    //Console.WriteLine("ClientManager::Connect connected = " + connected);
+
+                } while (!connected);
+            } finally
             {
-                System.Threading.Thread.Sleep(200);
-                if (timeout > 0 && ((DateTime.Now.Ticks - started) / TimeSpan.TicksPerMillisecond) > timeout)
-                {
-                    var msg = String.Format("Cancelling connection request {0} due to timeout of {1}", cnnreq.ToString(), timeout);
-                    Tracing.TraceEvent(TraceEventType.Error, 1000, "Connect exception: {0}", msg);
-                    throw new TimeoutException(msg);
-                }
-                if (cnnreq.Failed)
-                {
-                    var msg = String.Format("Failed request: {0} ", cnnreq.ToString());
-                    Tracing.TraceEvent(TraceEventType.Error, 1000, "Connect exception: {0}", msg);
-                    throw new Exception(msg);
-                }
+                ConnectionRequests.Remove(cnnreq.ID);
+            }
 
-                connected = cnnreq.Succeeded;
-                System.Threading.Thread.Sleep(200);
-                //Console.WriteLine("ClientManager::Connect connected = " + connected);
+            //here the connection is successful so we update the server with the request response data (cos it contains ServerID)
+            Servers[serverKey].ID = cnnreq.Response.Sender;
 
-            } while (!connected);
+            Tracing.TraceEvent(TraceEventType.Information, 1000, "Connection request {0} successful", cnnreq);
 
             return (ClientConnection)cnnreq.Connection;
         }

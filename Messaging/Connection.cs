@@ -88,6 +88,8 @@ namespace Chetch.Messaging
         private ThreadExecutionState _startXS = null;
         public bool RemainConnected { get; set; } = false;
         public bool RemainOpen { get; set; } = false;
+        public String ServerID { get; set; }
+
 
         public TraceSource Tracing { get; set; } = null;
 
@@ -155,6 +157,7 @@ namespace Chetch.Messaging
                 //Console.WriteLine("Monitoring connection " + ID + " has state " + State);
                 if (_startXS != null && _startXS.IsFinished)
                 {
+                    Tracing?.TraceEvent(TraceEventType.Warning, 2000, "Connection::Monitor: Exeuction thread is of state {0} but connection is of state {1} so setting connection stateo to closed.", _startXS.State, State);
                     State = ConnectionState.CLOSED;
                 }
 
@@ -169,10 +172,19 @@ namespace Chetch.Messaging
                 }
                 if (State == ConnectionState.CLOSED)
                 {
-                    if (_startXS != null && !_startXS.IsFinished)
+                    if (_startXS != null)
                     {
-                        Tracing?.TraceEvent(TraceEventType.Information, 2000, "Connection::Monitor: Exeuction thread is of state closed but is not finished, attepting to terminate");
-                        ThreadExecutionManager.Terminate(_startXS.ID);
+                        if (_startXS.IsFinished)
+                        {
+                            Tracing?.TraceEvent(TraceEventType.Information, 2000, "Connection::Monitor: Exeuction thread is of state closed but is not finished so terminating.");
+                            ThreadExecutionManager.Terminate(_startXS.ID);
+                        } else if(_startXS.Exceptions.Count > 0)
+                        {
+                            foreach (var ex in _startXS.Exceptions)
+                            {
+                                Tracing?.TraceEvent(TraceEventType.Error, 2000, "Connection::Monitor: Exeuction thread is of state closed with exception {0}", ex.Message);
+                            }
+                        }
                     }
                     break;
                 }
@@ -183,7 +195,7 @@ namespace Chetch.Messaging
         {
             if (!CanOpen()) return false;
 
-            Tracing?.TraceEvent(TraceEventType.Verbose, 2000, "Connection::Close: {0} opening", ID);
+            Tracing?.TraceEvent(TraceEventType.Verbose, 2000, "Connection::Open: {0} opening", ID);
 
             State = ConnectionState.OPENING;
             Stream = null; //
@@ -245,7 +257,18 @@ namespace Chetch.Messaging
         {
             if (Mgr != null)
             {
-                Mgr.HandleReceivedMessage(this, message);
+                try
+                {
+                    Mgr.HandleReceivedMessage(this, message);
+                } catch (MessageHandlingException e)
+                {
+                    throw e;
+                }
+                catch (Exception e)
+                {
+                    var x = new MessageHandlingException(message, e);
+                    throw x;
+                }
             }
         }
 
@@ -295,8 +318,6 @@ namespace Chetch.Messaging
 
         protected void ReceiveMessage()
         {
-            if (!CanReceive()) return;
-
             ConnectionState oldState = State;
             String data = null;
             try
@@ -322,8 +343,6 @@ namespace Chetch.Messaging
 
         virtual public void SendMessage(Message message)
         {
-            if (!CanSend()) return;
-
             ConnectionState oldState = State;
             try
             {
@@ -377,6 +396,11 @@ namespace Chetch.Messaging
                 //this is done because the Name is normally set to the requester of the connection (i.e. client)
                 //See ConnectionManager -> Server and how it creates and initialises connections to clients
                 message.Target = Name;
+            }
+
+            if(message.Sender == null)
+            {
+                message.Sender = ServerID;
             }
             base.SendMessage(message);
         }
@@ -475,6 +499,18 @@ namespace Chetch.Messaging
             msg.Type = type;
             msg.Value = message;
             SendMessage(target, msg);
+        }
+
+        virtual public void SendServerCommand(Server.CommandType cmdType, params String[] cmdParams)
+        {
+            var command = new Message();
+            command.Type = MessageType.COMMAND;
+            command.SubType = (int)cmdType;
+            command.Target = ServerID;
+
+            //now add in extra params
+
+            SendMessage(command);
         }
 
         virtual public void RequestServerStatus()

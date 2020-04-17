@@ -45,7 +45,7 @@ namespace Chetch.Messaging
             State = ConnectionState.CLOSING;
             //Console.WriteLine("TCPClient::Close: {0} closing", ID);
             RemainOpen = false;
-            _client.Close();
+            _client?.Close();
             base.Close();
         }
 
