@@ -501,14 +501,36 @@ namespace Chetch.Messaging
             SendMessage(target, msg);
         }
 
-        virtual public void SendServerCommand(Server.CommandType cmdType, params String[] cmdParams)
+        virtual public void SendServerCommand(Server.CommandName cmd, params Object[] cmdParams)
         {
             var command = new Message();
             command.Type = MessageType.COMMAND;
-            command.SubType = (int)cmdType;
+            command.SubType = (int)cmd;
             command.Target = ServerID;
 
             //now add in extra params
+            switch (cmd)
+            {
+                case Server.CommandName.SET_TRACE_LEVEL:
+                    if(cmdParams.Length < 2)
+                    {
+                        throw new Exception("Please supply a listener name and trace level");
+                    }
+
+                    command.AddValue("Listener", cmdParams[0].ToString());
+                    command.AddValue("TraceLevel", (int)cmdParams[1]);
+                    break;
+
+                case Server.CommandName.RESTORE_TRACE_LEVEL:
+                    if (cmdParams.Length < 1)
+                    {
+                        throw new Exception("Please supply a listener name");
+                    }
+
+                    command.AddValue("Listener", cmdParams[0].ToString());
+                    break;
+            }
+
 
             SendMessage(command);
         }

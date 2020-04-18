@@ -4,6 +4,7 @@ using System.Text;
 using System.Xml.Serialization;
 using System.Xml;
 using System.IO;
+using System.Linq;
 using Chetch.Utilities;
 
 namespace Chetch.Messaging
@@ -33,7 +34,9 @@ namespace Chetch.Messaging
         CONNECTION_REQUEST_RESPONSE,
         SHUTDOWN,
         SUBSCRIBE,
-        UNSUBSCRIBE
+        UNSUBSCRIBE,
+        COMMAND_RESPONSE,
+        TRACE
     }
 
     public enum MessageEncoding
@@ -199,10 +202,27 @@ namespace Chetch.Messaging
             return (byte)GetInt(key);
         }
 
-        /*public byte GetBool(String key)
+
+        public bool GetBool(String key)
         {
-            return System.Convert.ToBoolean(GetString(key));
-        }*/
+            var v = GetValue(key);
+            if (v is bool) return (bool)v;
+            if(v is String) return System.Convert.ToBoolean(GetString(key));
+            return GetInt(key) != 0;
+        }
+
+        public List<T> GetList<T>(String key)
+        {
+            Object v = GetValue(key);
+            if (v is System.Collections.ArrayList)
+            {
+                var al = (System.Collections.ArrayList)v;
+                return al.Cast<T>().ToList();
+            }
+
+            throw new Exception("Cannot convert to List as value is of type " + v.GetType().ToString());
+
+        }
 
         public void Clear()
         {
@@ -420,7 +440,8 @@ namespace Chetch.Messaging
             s += "Target: " + Target + lf;
             s += "Response ID: " + ResponseID + lf;
             s += "Sender: " + Sender + lf;
-            s += "Type: " + Type;
+            s += "Type: " + Type + lf;
+            s += "Sub Type: " + SubType;
             return s;
         }
 
