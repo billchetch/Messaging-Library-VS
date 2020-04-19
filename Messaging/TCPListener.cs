@@ -49,10 +49,12 @@ namespace Chetch.Messaging
         }
         override public void Close()
         {
-            //Console.WriteLine("TCPListener::Close closing {0}", ID);
-            State = ConnectionState.CLOSING;
-            _listener.Stop();
-            _client?.Close();
+            if (State != ConnectionState.CLOSED)
+            {
+                State = ConnectionState.CLOSING;
+                _listener.Stop();
+                _client?.Close();
+            }
             base.Close();
         }
 

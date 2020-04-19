@@ -42,10 +42,13 @@ namespace Chetch.Messaging
 
         override public void Close()
         {
-            State = ConnectionState.CLOSING;
-            //Console.WriteLine("TCPClient::Close: {0} closing", ID);
-            RemainOpen = false;
-            _client?.Close();
+            if (State != ConnectionState.CLOSED)
+            {
+                State = ConnectionState.CLOSING;
+                RemainOpen = false; //to allow for the Connect method to exit
+                //TODO: test putting a sleep here to allow the Connect method time to exit
+                _client?.Close();
+            }
             base.Close();
         }
 

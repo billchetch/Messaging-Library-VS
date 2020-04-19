@@ -56,6 +56,10 @@ namespace Chetch.Messaging
                         _state = value;
                         States[value] = DateTime.Now.Ticks;
                     }
+                    if (_state == ConnectionState.CLOSING)
+                    {
+                        OnClosing();
+                    }
                     if (_state == ConnectionState.CLOSED)
                     {
                         OnClose(_startXS == null ? null : _startXS.Exceptions);
@@ -204,6 +208,12 @@ namespace Chetch.Messaging
 
         virtual public void Close()
         {
+            if(State == ConnectionState.CLOSED)
+            {
+                Tracing?.TraceEvent(TraceEventType.Warning, 2000, "Connection::Close: {0} already of state CLOSED", ID);
+                return;
+            }
+
             Tracing?.TraceEvent(TraceEventType.Verbose, 2000, "Connection::Close: {0} started closing", ID);
 
             State = ConnectionState.CLOSING;
@@ -228,6 +238,13 @@ namespace Chetch.Messaging
 
         abstract protected void OnConnectionTimeout();
         abstract protected void OnActivityTimeout();
+        virtual protected void OnClosing()
+        {
+            if (Mgr != null)
+            {
+                Mgr.OnConnectionClosing(this);
+            }
+        }
         virtual protected void OnClose(List<Exception> exceptions)
         {
             if (Mgr != null)
@@ -416,6 +433,8 @@ namespace Chetch.Messaging
         protected Dictionary<String, Message> Subscribers = new Dictionary<string, Message>();
         protected Dictionary<String, Message> Subscriptions = new Dictionary<string, Message>();
 
+        private bool _tracing2Client = false;
+
         public ClientConnection() : base()
         {
             RemainOpen = false;
@@ -436,6 +455,16 @@ namespace Chetch.Messaging
             else
             {
                 return false;
+            }
+        }
+
+        override protected void OnClosing()
+        {
+            base.OnClosing();
+            if (_tracing2Client)
+            {
+                _tracing2Client = false;
+                StopTracingToClient();
             }
         }
 
@@ -471,7 +500,12 @@ namespace Chetch.Messaging
                     }
                     break;
 
-                    //TODO: handle error messages...
+                case MessageType.TRACE:
+                    _tracing2Client = true;
+                    HandleMessage?.Invoke(this, message);
+                    break;
+
+               //TODO: handle error messages...
                 default:
                     HandleMessage?.Invoke(this, message);
                     break;
@@ -484,6 +518,12 @@ namespace Chetch.Messaging
             {
                 message.Sender = Name;
             }
+
+            if(message.Type == MessageType.COMMAND && message.SubType == (int)Server.CommandName.STOP_TRACE_TO_CLIENT)
+            {
+                _tracing2Client = false;
+            }
+
             base.SendMessage(message);
         }
 
@@ -498,6 +538,15 @@ namespace Chetch.Messaging
             var msg = new Message();
             msg.Type = type;
             msg.Value = message;
+            SendMessage(target, msg);
+        }
+
+        virtual public void SendCommand(String target, String command, List<Object> args = null)
+        {
+            var msg = new Message();
+            msg.Type = MessageType.COMMAND;
+            msg.Value = command;
+            msg.AddValue("Arguments", args);
             SendMessage(target, msg);
         }
 
@@ -529,6 +578,15 @@ namespace Chetch.Messaging
 
                     command.AddValue("Listener", cmdParams[0].ToString());
                     break;
+
+                case Server.CommandName.ECHO_TRACE_TO_CLIENT:
+                    if (cmdParams.Length < 1)
+                    {
+                        throw new Exception("Please supply something to echo");
+                    }
+
+                    command.Value = (String)cmdParams[0];
+                    break;
             }
 
 
@@ -542,6 +600,22 @@ namespace Chetch.Messaging
             var request = new Message();
             request.Type = MessageType.STATUS_REQUEST;
             SendMessage(request);
+        }
+
+        virtual public void StartTracingToClient()
+        {
+            SendServerCommand(Server.CommandName.START_TRACE_TO_CLIENT);
+        }
+
+
+        virtual public void EchoTracingToClient(String toEcho)
+        {
+            SendServerCommand(Server.CommandName.ECHO_TRACE_TO_CLIENT, toEcho);
+        }
+
+        virtual public void StopTracingToClient()
+        {
+            SendServerCommand(Server.CommandName.STOP_TRACE_TO_CLIENT);
         }
 
         virtual public void Subscribe(String target)

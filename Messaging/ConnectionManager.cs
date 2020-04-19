@@ -156,7 +156,9 @@ namespace Chetch.Messaging
 
         abstract public void HandleReceivedMessage(Connection cnn, Message message);
         abstract protected void HandleConnectionErrors(Connection cnn, List<Exception> exceptions);
-        
+
+
+        abstract public void OnConnectionClosing(Connection cnn);
         virtual public void OnConnectionClosed(Connection cnn, List<Exception> exceptions)
         {
             lock (_lockConnections)
@@ -244,6 +246,7 @@ namespace Chetch.Messaging
             SET_TRACE_LEVEL,
             RESTORE_TRACE_LEVEL,
             START_TRACE_TO_CLIENT,
+            ECHO_TRACE_TO_CLIENT,
             STOP_TRACE_TO_CLIENT
         }
 
@@ -394,33 +397,6 @@ namespace Chetch.Messaging
             return connections;
         }
 
-        override public void OnConnectionClosed(Connection cnn, List<Exception> exceptions)
-        {
-            Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} closed", cnn.ToString());
-
-            if(cnn == _traceConnection)
-            {
-                if (!_trace2clientXS.IsFinished)
-                {
-                    Tracing?.TraceEvent(TraceEventType.Information, 1000, "Stopping sending trace to connection {0} because connection has closed", cnn.ToString());
-                    Tracing.Listeners.Remove(TListener);
-                    TListener = null;
-                    ThreadExecutionManager.Terminate(_trace2clientXS.ID);
-                    MStream.Close();
-                    MStream.Dispose();
-                    MStream = null;
-                    
-                }
-            }
-
-            base.OnConnectionClosed(cnn, exceptions);
-        }
-
-        override public void OnConnectionConnected(Connection cnn)
-        {
-            Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} connected", cnn.ToString());
-        }
-
         override public void OnConnectionOpened(Connection cnn)
         {
             if (cnn != PrimaryConnection)
@@ -442,6 +418,38 @@ namespace Chetch.Messaging
                 Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Primary Connection {0} Opened", cnn.ToString());
 
             }
+        }
+
+        override public void OnConnectionConnected(Connection cnn)
+        {
+            Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} connected", cnn.ToString());
+        }
+
+        override public void OnConnectionClosing(Connection cnn)
+        {
+            Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} closing...", cnn.ToString());
+        }
+
+        override public void OnConnectionClosed(Connection cnn, List<Exception> exceptions)
+        {
+            Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} closed", cnn.ToString());
+
+            if (cnn == _traceConnection)
+            {
+                if (!_trace2clientXS.IsFinished)
+                {
+                    Tracing?.TraceEvent(TraceEventType.Information, 1000, "Stopping sending trace to connection {0} because connection has closed", cnn.ToString());
+                    Tracing.Listeners.Remove(TListener);
+                    TListener = null;
+                    ThreadExecutionManager.Terminate(_trace2clientXS.ID);
+                    MStream.Close();
+                    MStream.Dispose();
+                    MStream = null;
+
+                }
+            }
+
+            base.OnConnectionClosed(cnn, exceptions);
         }
 
         override protected void HandleConnectionErrors(Connection cnn, List<Exception> exceptions)
@@ -629,7 +637,7 @@ namespace Chetch.Messaging
                                 SourceLevels level = (SourceLevels)message.GetInt("TraceLevel");
                                 TraceSourceManager.SetListenersTraceLevel(Tracing.Name, listenerName, level);
 
-                                Tracing.TraceEvent(TraceEventType.Information, 1000, "Started sending trace to {0}", cnn.ToString());
+                                Tracing.TraceEvent(TraceEventType.Information, 1000, "Set trace level for {0} to {1}", listenerName, level);
                             } else
                             {
                                 cnn.SendMessage(CreateErrorMessage("Message does not have a Listener and/or TraceLevel value", cnn));
@@ -647,6 +655,7 @@ namespace Chetch.Messaging
                             {
                                 String listenerName = message.GetString("Listener");
                                 TraceSourceManager.RestoreListeners(Tracing.Name, listenerName);
+                                Tracing.TraceEvent(TraceEventType.Information, 1000, "Restored trace level for {0}", listenerName);
                             }
                             else
                             {
@@ -666,10 +675,26 @@ namespace Chetch.Messaging
                                 MStream = new MemoryStream();
                             }
 
+                            Tracing.TraceEvent(TraceEventType.Information, 1000, "Attempting to start tracing to {0}", cnn.ToString());
+                            
                             TListener = new TextWriterTraceListener(MStream);
                             Tracing.Listeners.Add(TListener);
                             _traceConnection = cnn;
                             _trace2clientXS = ThreadExecutionManager.Execute<Connection>("trace2client", this.ReadMemoryStream, cnn);
+
+                            break;
+
+                        case CommandName.ECHO_TRACE_TO_CLIENT:
+                            if (Tracing == null)
+                            {
+                                cnn.SendMessage(CreateErrorMessage("No Tracing Source available", cnn));
+                                return;
+                            }
+
+                            if(_traceConnection != null)
+                            {
+                                Tracing.TraceEvent(TraceEventType.Information, 1000, "Echoing from {0}: {1}", cnn.ToString(), message.Value);
+                            }
                             break;
 
                         case CommandName.STOP_TRACE_TO_CLIENT:
@@ -690,6 +715,7 @@ namespace Chetch.Messaging
                                 MStream.Close();
                                 MStream.Dispose();
                                 MStream = null;
+                                Tracing.TraceEvent(TraceEventType.Information, 1000, "Stopped tracing to {0}", cnn.ToString());
                             }
                             break;
                     }
@@ -892,6 +918,11 @@ namespace Chetch.Messaging
                 var cnnreq = GetRequest(cnn);
                 cnnreq.Succeeded = true;
             }
+        }
+
+        override public void OnConnectionClosing(Connection cnn)
+        {
+            Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} closing...", cnn.ToString());
         }
 
         override public void OnConnectionClosed(Connection cnn, List<Exception> exceptions)
