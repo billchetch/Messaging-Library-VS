@@ -20,12 +20,12 @@ namespace Chetch.Messaging
             Message = message;
         }
 
-        public MessageHandlingException(Message message) : base()
+        public MessageHandlingException(Message message) : base("no exception message supplied")
         {
             Message = message;
         }
 
-        public MessageHandlingException(Message message, Exception e) : base("message not given", e)
+        public MessageHandlingException(Message message, Exception e) : base(e.Message, e)
         {
             Message = message;
         }

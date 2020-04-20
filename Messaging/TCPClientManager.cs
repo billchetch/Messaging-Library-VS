@@ -16,6 +16,11 @@ namespace Chetch.Messaging
         {
             //empty
         }
+
+        public void AddServer(String serverName, IPAddress ip, int port)
+        {
+            AddServer(serverName, TCPServer.ConnectionString(ip, port));
+        }
         
     } //end TCPClientManager class
 }

@@ -85,6 +85,8 @@ namespace Chetch.Messaging
             }
         }
 
+        public TraceSource Tracing { get; set; } = null;
+
         public MessageHandler HandleMessage = null;
         public ErrorHandler HandleError = null;
 
@@ -121,17 +123,19 @@ namespace Chetch.Messaging
         {
             if (_primaryConnection == null)
             {
+                Tracing?.TraceEvent(TraceEventType.Information, 1000, "Initialising primary connection");
+
                 _primaryConnection = CreatePrimaryConnection(connectionString);
-                _primaryConnection.Mgr = this;
             }
             else if (connectionString != null && !connectionString.Equals(LastConnectionString, StringComparison.OrdinalIgnoreCase))
             {
-                if(_primaryConnection.State != Connection.ConnectionState.CLOSED)
+                Tracing?.TraceEvent(TraceEventType.Information, 1000, "Re-initialising primary connection");
+
+                if (_primaryConnection.State != Connection.ConnectionState.CLOSED)
                 {
                     throw new Exception("Cannot re-initalise primary connection because there is one currently connected");
                 }
                 _primaryConnection = CreatePrimaryConnection(connectionString);
-                _primaryConnection.Mgr = this;
             }
             LastConnectionString = connectionString;
         }
@@ -172,23 +176,23 @@ namespace Chetch.Messaging
             if (exceptions.Count > 0)
             {
                 ConnectionRequest cnnreq = null;
-                if (cnn == PrimaryConnection)
+                foreach(var e in exceptions)
                 {
-                    foreach(var e in exceptions)
+                    if(e is MessageHandlingException)
                     {
-                        if(e is MessageHandlingException)
+                        var m = ((MessageHandlingException)e).Message;
+                        if(m != null && m.Type == MessageType.CONNECTION_REQUEST_RESPONSE)
                         {
-                            var m = ((MessageHandlingException)e).Message;
-                            if(m != null && m.Type == MessageType.CONNECTION_REQUEST_RESPONSE)
-                            {
-                                cnnreq = GetRequest(m.ResponseID);
-                            }
+                            cnnreq = GetRequest(m.ResponseID);
+                            break;
                         }
                     }
+                }
 
-                } else {
+                if(cnnreq == null){
                     cnnreq = GetRequest(cnn);
                 }
+
                 if (cnnreq != null && !cnnreq.Succeeded)
                 {
                     cnnreq.Failed = true;
@@ -205,8 +209,25 @@ namespace Chetch.Messaging
             return ID + "-" + _incrementFrom.ToString();
         }
 
-        abstract public Connection CreatePrimaryConnection(String connectionString);
-        abstract public Connection CreateConnection(Message message);
+        virtual public Connection CreatePrimaryConnection(String connectionString, Connection newCnn = null)
+        {
+            if (newCnn != null)
+            {
+                newCnn.Mgr = this;
+                newCnn.Tracing = Tracing;
+            }
+            return newCnn;
+        }
+
+        virtual public Connection CreateConnection(Message message, Connection requestingCnn, Connection newCnn = null)
+        {
+            if (newCnn != null)
+            {
+                newCnn.Mgr = this;
+                newCnn.Tracing = Tracing;
+            }
+            return newCnn;
+        }
 
         virtual protected ConnectionRequest AddRequest(Message request, Connection cnn = null)
         {
@@ -237,6 +258,15 @@ namespace Chetch.Messaging
 
     abstract public class Server : ConnectionManager
     {
+        public enum ServerState
+        {
+            NOT_SET,
+            STARTING,
+            STARTED,
+            STOPPING,
+            STOPPED
+        }
+
         public enum CommandName
         {
             NOT_SET,
@@ -250,11 +280,14 @@ namespace Chetch.Messaging
             STOP_TRACE_TO_CLIENT
         }
 
-        public TraceSource Tracing { get; set; } = null; 
         protected MemoryStream MStream { get; set;  } = null;
         protected TraceListener TListener { get; set;  } = null;
         private ThreadExecutionState _trace2clientXS = null;
         private Connection _traceConnection = null;
+        public ServerState State { get; internal set; } = ServerState.NOT_SET;
+        public bool IsRunning { get { return State == ServerState.STARTED;  } }
+
+        protected List<ServerConnection> SecondaryConnections = new List<ServerConnection>(); 
 
         public Server() : base()
         {
@@ -262,43 +295,81 @@ namespace Chetch.Messaging
             Tracing?.TraceEvent(TraceEventType.Information, 1000, "Created Server with ID {0}", ID);
         }
 
-        override protected void InitialisePrimaryConnection(String connectionString)
+        override public Connection CreatePrimaryConnection(String connectionString, Connection newCnn = null)
         {
-            if (PrimaryConnection == null)
+            if(newCnn != null)
             {
-                Tracing?.TraceEvent(TraceEventType.Information, 1000, "Initialising primary connection");
+                newCnn.RemainOpen = true;
+                newCnn.RemainConnected = false;
+                newCnn.ConnectionTimeout = -1;
+                newCnn.ActivityTimeout = 10000;
+                newCnn.ServerID = ID;
             }
-            else if (connectionString != null && connectionString.Equals(LastConnectionString, StringComparison.OrdinalIgnoreCase))
-            {
-                Tracing?.TraceEvent(TraceEventType.Information, 1000, "Re-initialising primary connection");
-            }
+            return base.CreatePrimaryConnection(connectionString, newCnn);
+        }
 
-            base.InitialisePrimaryConnection(connectionString);
-            if (PrimaryConnection.Tracing == null)
+        virtual protected bool CanCreateConnection(Connection cnn)
+        {
+            if(cnn == PrimaryConnection)
             {
-                PrimaryConnection.Tracing = Tracing;
+                return true;
+            } else
+            {
+                foreach(var scnn in SecondaryConnections)
+                {
+                    if (cnn == scnn) return true;
+                }
             }
-            PrimaryConnection.RemainOpen = true;
-            PrimaryConnection.RemainConnected = false;
-            PrimaryConnection.ConnectionTimeout = -1;
-            PrimaryConnection.ActivityTimeout = 10000;
-            PrimaryConnection.ServerID = ID;
+            return false;
+        }
+
+        override public Connection CreateConnection(Message message, Connection requestingCnn, Connection newCnn = null)
+        {
+            return base.CreateConnection(message, requestingCnn, newCnn);
         }
 
         virtual public void Start()
         {
+            if(State != ServerState.NOT_SET && State != ServerState.STOPPED)
+            {
+                var msg = String.Format("Cannot start server with state {0}", State);
+                Tracing?.TraceEvent(TraceEventType.Error, 1000, msg);
+                throw new Exception(msg);
+            }
+
+            State = ServerState.STARTING;
             Tracing?.TraceEvent(TraceEventType.Information, 1000, "Starting");
             if (PrimaryConnection == null || PrimaryConnection.CanOpen())
             {
-                Tracing?.TraceEvent(TraceEventType.Start, 1000, "Initialising primary connection");
+                foreach(var cnn in SecondaryConnections)
+                {
+                    if (!cnn.CanOpen())
+                    {
+                        throw new Exception(String.Format("Secondary connection {0} cannot be opened", cnn.ToString()));
+                    }
+                }
+
+                Tracing?.TraceEvent(TraceEventType.Information, 1000, "Initialising primary connection");
                 InitialisePrimaryConnection(null);
                 PrimaryConnection.Open();
+
+                if(SecondaryConnections.Count > 0)
+                {
+                    foreach (var cnn in SecondaryConnections)
+                    {
+                        Tracing?.TraceEvent(TraceEventType.Information, 1000, "Opening secondary connection {0}", cnn.ToString());
+                        cnn.Open();
+                    }
+                }
             }
+
+            State = ServerState.STARTED;
             Tracing?.TraceEvent(TraceEventType.Information, 1000, "Started");
         }
 
         virtual public void Stop(bool waitForThreads = true)
         {
+            State = ServerState.STOPPING;
             Tracing?.TraceEvent(TraceEventType.Information, 1000, "Stopping ... waiting for threads {0}", waitForThreads);
 
             var message = CreateShutdownMessage();
@@ -306,7 +377,17 @@ namespace Chetch.Messaging
 
             if (PrimaryConnection != null && PrimaryConnection.State != Connection.ConnectionState.CLOSED)
             {
+                Tracing?.TraceEvent(TraceEventType.Information, 1000, "Closing primary connection {0}", PrimaryConnection.ToString());
                 PrimaryConnection.Close();
+            }
+
+            foreach (var cnn in SecondaryConnections)
+            {
+                if(cnn.State != Connection.ConnectionState.CLOSED)
+                { 
+                    Tracing?.TraceEvent(TraceEventType.Information, 1000, "Closing secondary connection {0}", cnn.ToString());
+                    cnn.Close();
+                }
             }
 
             List<String> threads2check = new List<String>();
@@ -341,6 +422,7 @@ namespace Chetch.Messaging
                 waitForThreads = threads2check.Count > 0;
             }
 
+            State = ServerState.STOPPED;
             Tracing?.TraceEvent(TraceEventType.Information, 1000, "Stopped", false);
         }
 
@@ -399,7 +481,7 @@ namespace Chetch.Messaging
 
         override public void OnConnectionOpened(Connection cnn)
         {
-            if (cnn != PrimaryConnection)
+            if (cnn != PrimaryConnection && !SecondaryConnections.Contains(cnn))
             {
                 var cnnreq = GetRequest(cnn);
                 if (cnnreq != null)
@@ -415,7 +497,7 @@ namespace Chetch.Messaging
                 }
             } else
             {
-                Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Primary Connection {0} Opened", cnn.ToString());
+                Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "{0} Connection {1} Opened", cnn == PrimaryConnection ? "Primary" : "Secondary", cnn.ToString());
 
             }
         }
@@ -507,7 +589,7 @@ namespace Chetch.Messaging
             {
                 case MessageType.CONNECTION_REQUEST:
                     //we received a connection request
-                    if (cnn == PrimaryConnection)
+                    if (CanCreateConnection(cnn))
                     {
                         Connection newCnn = null;
                         String declined = null;
@@ -520,13 +602,11 @@ namespace Chetch.Messaging
 
                         if (declined == null)
                         {
-                            newCnn = CreateConnection(message);
+                            newCnn = CreateConnection(message, cnn);
                             if (newCnn != null)
                             {
                                 Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Created connection for {0}", message.Sender);
 
-                                newCnn.Mgr = this;
-                                newCnn.Tracing = Tracing;
                                 newCnn.RemainConnected = true;
                                 newCnn.RemainOpen = false;
                                 newCnn.Name = message.Sender;
@@ -570,7 +650,8 @@ namespace Chetch.Messaging
                             {
                                 Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection for request {0} opened", cnnreq.ToString());
                             }
-                            PrimaryConnection.SendMessage(response);
+
+                            cnn.SendMessage(response);
 
                             //Finally ew can remove the connection request
                             ConnectionRequests.Remove(cnnreq.ID);
@@ -776,6 +857,13 @@ namespace Chetch.Messaging
             {
                 activecnns.Add(accn.ToString());
             }
+            response.AddValue("SecondaryConnectionsCount", SecondaryConnections.Count);
+            var scnns = new List<String>();
+            foreach(var scnn in SecondaryConnections)
+            {
+                scnns.Add(scnn.ToString());
+            }
+            response.AddValue("SecondaryConnections", scnns);
             response.AddValue("ActiveConnectionsCount", activecnns.Count);
             response.AddValue("ActiveConnections", activecnns);
             response.AddValue("MaxConnections", MaxConnections);
@@ -865,32 +953,29 @@ namespace Chetch.Messaging
             }
 
             base.InitialisePrimaryConnection(connectionString);
-            if (PrimaryConnection.Tracing == null)
-            {
-                PrimaryConnection.Tracing = Tracing;
-            }
+            
             PrimaryConnection.RemainOpen = false;
             PrimaryConnection.RemainConnected = false;
             PrimaryConnection.ConnectionTimeout = 10000;
             PrimaryConnection.ActivityTimeout = 5000;
         }
 
-        override public Connection CreatePrimaryConnection(String connectionString)
+        override public Connection CreatePrimaryConnection(String connectionString, Connection cnn = null)
         {
             T client = new T();
             client.ID = CreateNewConnectionID();
             client.ParseConnectionString(connectionString);
-            return client;
+            return base.CreatePrimaryConnection(connectionString, client);
         }
 
-        override public Connection CreateConnection(Message message)
+        override public Connection CreateConnection(Message message, Connection requestingCnn, Connection newCnn = null)
         {
             if (message != null && message.Type == MessageType.CONNECTION_REQUEST_RESPONSE)
             {
                 T client = new T();
                 client.ID = CreateNewConnectionID();
                 client.ParseMessage(message);
-                return client;
+                return base.CreateConnection(message, requestingCnn, client);
             }
             else
             {
@@ -960,11 +1045,9 @@ namespace Chetch.Messaging
                         }
 
                         //server has granted connection so we try and make the connection here
-                        var newCnn = CreateConnection(message);
+                        var newCnn = CreateConnection(message, cnn);
                         if (newCnn != null)
                         {
-                            newCnn.Mgr = this;
-                            newCnn.Tracing = Tracing;
                             newCnn.RemainConnected = true;
                             newCnn.RemainOpen = false;
                             newCnn.ConnectionTimeout = DefaultConnectionTimeout;

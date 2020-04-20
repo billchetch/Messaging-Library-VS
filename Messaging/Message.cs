@@ -74,7 +74,7 @@ namespace Chetch.Messaging
         {
             get
             {
-                return Values.Count > 0 ? GetString("Value") : null;
+                return Values.Count > 0 && HasValue("Value") ? GetString("Value") : null;
             }
             set
             {

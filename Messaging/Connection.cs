@@ -568,8 +568,7 @@ namespace Chetch.Messaging
                     command.Value = (String)cmdParams[0];
                     break;
             }
-
-
+            
             SendMessage(command);
         }
 
