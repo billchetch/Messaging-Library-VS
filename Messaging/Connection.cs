@@ -527,30 +527,10 @@ namespace Chetch.Messaging
             base.SendMessage(message);
         }
 
-        virtual public void SendMessage(String target, Message message)
-        {
-            message.Target = target;
-            SendMessage(message);
-        }
-
-        virtual public void SendMessage(String target, String message, MessageType type = MessageType.INFO)
-        {
-            var msg = new Message();
-            msg.Type = type;
-            msg.Value = message;
-            SendMessage(target, msg);
-        }
-
-        virtual public void SendCommand(String target, String command, List<Object> args = null)
-        {
-            var msg = new Message();
-            msg.Type = MessageType.COMMAND;
-            msg.Value = command;
-            msg.AddValue("Arguments", args);
-            SendMessage(target, msg);
-        }
-
-        virtual public void SendServerCommand(Server.CommandName cmd, params Object[] cmdParams)
+        /*
+         *Server directed messages 
+         */
+        public void SendServerCommand(Server.CommandName cmd, params Object[] cmdParams)
         {
             var command = new Message();
             command.Type = MessageType.COMMAND;
@@ -593,7 +573,7 @@ namespace Chetch.Messaging
             SendMessage(command);
         }
 
-        virtual public void RequestServerStatus()
+        public void RequestServerStatus()
         {
             if (!IsConnected) throw new Exception("Connection::RequestStatus: cannot request because not connected");
 
@@ -602,20 +582,64 @@ namespace Chetch.Messaging
             SendMessage(request);
         }
 
-        virtual public void StartTracingToClient()
+        public void SetListenerTraceLevel(String listenerName, SourceLevels level)
+        {
+            SendServerCommand(Server.CommandName.SET_TRACE_LEVEL, listenerName, level);
+        }
+
+        public void SetListenerTraceLevel(String listenerName, String level)
+        {
+            SourceLevels l = (SourceLevels)Enum.Parse(typeof(SourceLevels), level, true);
+            SetListenerTraceLevel(listenerName, l);
+        }
+
+        public void RestoreListenerTraceLevel(String listenerName)
+        {
+            SendServerCommand(Server.CommandName.RESTORE_TRACE_LEVEL, listenerName);
+        }
+
+        public void StartTracingToClient()
         {
             SendServerCommand(Server.CommandName.START_TRACE_TO_CLIENT);
         }
 
 
-        virtual public void EchoTracingToClient(String toEcho)
+        public void EchoTracingToClient(String toEcho)
         {
             SendServerCommand(Server.CommandName.ECHO_TRACE_TO_CLIENT, toEcho);
         }
 
-        virtual public void StopTracingToClient()
+        public void StopTracingToClient()
         {
             SendServerCommand(Server.CommandName.STOP_TRACE_TO_CLIENT);
+        }
+
+
+        /*
+         * Client directed messages
+         */
+
+        public void SendMessage(String target, Message message)
+        {
+            message.Target = target;
+            SendMessage(message);
+        }
+
+        public void SendMessage(String target, String message, MessageType type = MessageType.INFO)
+        {
+            var msg = new Message();
+            msg.Type = type;
+            msg.Value = message;
+            SendMessage(target, msg);
+        }
+
+        public void SendCommand(String target, String command, List<Object> args = null)
+        {
+            var msg = new Message();
+            msg.Type = MessageType.COMMAND;
+            msg.Value = command;
+            msg.AddValue("Arguments", args);
+            SendMessage(target, msg);
         }
 
         virtual public void Subscribe(String target)
@@ -632,7 +656,7 @@ namespace Chetch.Messaging
             SendMessage(target, msg);
         }
 
-        virtual public void Unsubscribe(String target)
+        public void Unsubscribe(String target)
         {
             var targets = target.Split(',');
             foreach (var tgt in targets)
@@ -643,7 +667,7 @@ namespace Chetch.Messaging
             SendMessage(target, "Unsubscribing", MessageType.UNSUBSCRIBE);
         }
 
-        virtual public void Notify(Message message)
+        public void Notify(Message message)
         {
             if (Subscribers.Count > 0)
             {
@@ -652,7 +676,7 @@ namespace Chetch.Messaging
             }
         }
 
-        virtual public void Notify(String message, MessageType type = MessageType.INFO)
+        public void Notify(String message, MessageType type = MessageType.INFO)
         {
             var msg = new Message();
             msg.Type = type;
