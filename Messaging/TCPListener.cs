@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Net;
 using System.Net.Sockets;
 using System.IO;
+using System.Diagnostics;
 
 namespace Chetch.Messaging
 {
@@ -64,6 +65,7 @@ namespace Chetch.Messaging
         }
         override protected void OnActivityTimeout()
         {
+            //Tracing?.TraceEvent(System.Diagnostics.TraceEventType.Warning, 3000, "Activity timeout for connection {0}", ToString());
             if (_client.Connected)
             {
                 _client.Close();
@@ -92,9 +94,13 @@ namespace Chetch.Messaging
                         } while (RemainConnected);
 
                     }
-                    catch (System.IO.IOException e)
+                    catch (IOException e) //some kind of underlying stream or connection error
                     {
-                        //Console.WriteLine("Server: Reading exception " + e.Message + " on " + IP.ToString() + ":" + Port + "(" + ID + ")");
+                        Tracing?.TraceEvent(TraceEventType.Warning, 3000, "Server: Reading exception {0} {1} connection {2}", e.GetType().ToString(), e.Message, ID);
+                    }
+                    catch (Exception e) //other types of error
+                    {
+                        Tracing?.TraceEvent(TraceEventType.Warning, 3000, "Server: Reading exception {0} {1} connection {2}", e.GetType().ToString(), e.Message, ID);
                     }
                     finally
                     {

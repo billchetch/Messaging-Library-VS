@@ -100,7 +100,7 @@ namespace Chetch.Messaging
         protected Dictionary<String, Connection> Connections { get { return _connections; } }
         private int _incrementFrom = 0;
         protected int MaxConnections { get; set; } = 32;
-        public int DefaultConnectionTimeout { get; set; } = -1;
+        public int DefaultConnectionTimeout { get; set; } = 25000;
         public int DefaultActivityTimeout { get; set; } = -1;
         private Object _lockConnections = new Object();
 
@@ -277,7 +277,8 @@ namespace Chetch.Messaging
             RESTORE_TRACE_LEVEL,
             START_TRACE_TO_CLIENT,
             ECHO_TRACE_TO_CLIENT,
-            STOP_TRACE_TO_CLIENT
+            STOP_TRACE_TO_CLIENT,
+            CLOSE_CONNECTION
         }
 
         protected MemoryStream MStream { get; set;  } = null;
@@ -325,6 +326,14 @@ namespace Chetch.Messaging
 
         override public Connection CreateConnection(Message message, Connection requestingCnn, Connection newCnn = null)
         {
+            if(newCnn != null)
+            {
+                newCnn.RemainConnected = true;
+                newCnn.RemainOpen = false;
+                newCnn.ConnectionTimeout = DefaultConnectionTimeout;
+                newCnn.ActivityTimeout = DefaultActivityTimeout;
+            }
+
             return base.CreateConnection(message, requestingCnn, newCnn);
         }
 
@@ -372,9 +381,33 @@ namespace Chetch.Messaging
             State = ServerState.STOPPING;
             Tracing?.TraceEvent(TraceEventType.Information, 1000, "Stopping ... waiting for threads {0}", waitForThreads);
 
+            //broadcast a message for shutdown and wait a moment for clients to close
             var message = CreateShutdownMessage();
             Broadcast(message);
+            System.Threading.Thread.Sleep(100);
 
+            //now gather a list of threads to make sure have closed before exiting
+            List<String> threads2check = new List<String>();
+            if (waitForThreads)
+            {
+                var cid = PrimaryConnection.ID;
+                threads2check.Add(cid);
+                threads2check.Add("Monitor-" + cid);
+
+                foreach (var cnn in SecondaryConnections)
+                {
+                    threads2check.Add(cnn.ID);
+                    threads2check.Add("Monitor-" + cnn.ID);
+                }
+
+                foreach (var cnnId in Connections.Keys)
+                {
+                    threads2check.Add(cnnId);
+                    threads2check.Add("Monitor-" + cnnId);
+                }
+            }
+
+            //now close the various connections
             if (PrimaryConnection != null && PrimaryConnection.State != Connection.ConnectionState.CLOSED)
             {
                 Tracing?.TraceEvent(TraceEventType.Information, 1000, "Closing primary connection {0}", PrimaryConnection.ToString());
@@ -383,24 +416,18 @@ namespace Chetch.Messaging
 
             foreach (var cnn in SecondaryConnections)
             {
-                if(cnn.State != Connection.ConnectionState.CLOSED)
-                { 
+                if (cnn.State != Connection.ConnectionState.CLOSED)
+                {
                     Tracing?.TraceEvent(TraceEventType.Information, 1000, "Closing secondary connection {0}", cnn.ToString());
                     cnn.Close();
                 }
             }
-
-            List<String> threads2check = new List<String>();
-            if (waitForThreads)
-            {
-                foreach (var cnnId in Connections.Keys)
-                {
-                    threads2check.Add(cnnId);
-                    threads2check.Add("Monitor-" + cnnId);
-                }
-            }
             CloseConnections();
 
+            //wait a bit for the threads to terminate of their own accord
+            System.Threading.Thread.Sleep(100);
+
+            //now try and pick up any stragglers
             while (waitForThreads)
             {
                 Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Checking {0} threads", threads2check.Count());
@@ -422,6 +449,7 @@ namespace Chetch.Messaging
                 waitForThreads = threads2check.Count > 0;
             }
 
+            //set the server state to STOPPED, trace and exit
             State = ServerState.STOPPED;
             Tracing?.TraceEvent(TraceEventType.Information, 1000, "Stopped", false);
         }
@@ -606,12 +634,7 @@ namespace Chetch.Messaging
                             if (newCnn != null)
                             {
                                 Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Created connection for {0}", message.Sender);
-
-                                newCnn.RemainConnected = true;
-                                newCnn.RemainOpen = false;
                                 newCnn.Name = message.Sender;
-                                newCnn.ConnectionTimeout = DefaultConnectionTimeout;
-                                newCnn.ActivityTimeout = DefaultActivityTimeout;
                                 newCnn.ServerID = ID;
                                 Connections[newCnn.ID] = newCnn;
                             }
@@ -626,7 +649,7 @@ namespace Chetch.Messaging
                         {
                             response = CreateRequestResponse(message, null);
                             response.AddValue("Declined", declined);
-                            PrimaryConnection.SendMessage(response);
+                            cnn.SendMessage(response);
                             Tracing?.TraceEvent(TraceEventType.Warning, 1000, "Declined connection request for {0} because {1}", message.Sender, declined);
                         }
                         else
@@ -666,6 +689,7 @@ namespace Chetch.Messaging
                     break;
 
                 case MessageType.STATUS_REQUEST:
+                    Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} requested status", cnn.ToString());
                     response = CreateStatusResponse(message, cnn);
                     cnn.SendMessage(response);
                     break;
@@ -799,6 +823,46 @@ namespace Chetch.Messaging
                                 Tracing.TraceEvent(TraceEventType.Information, 1000, "Stopped tracing to {0}", cnn.ToString());
                             }
                             break;
+
+                        case CommandName.CLOSE_CONNECTION:
+                            if (message.HasValue("ConnectionID"))
+                            {
+                                String cnnId = message.GetString("ConnectionID");
+                                if(cnnId == ID)
+                                {
+                                    cnn.SendMessage(CreateErrorMessage("Cannot close your own connection", cnn));
+                                    return;
+                                }
+
+                                List<Connection> cnns = new List<Connection>();
+                                cnns.Add(PrimaryConnection);
+                                cnns.AddRange(SecondaryConnections);
+                                cnns.AddRange(Connections.Values);
+
+                                Connection cnn2close = null;
+                                foreach(var c in cnns)
+                                {
+                                    if(c.ID == cnnId)
+                                    {
+                                        cnn2close = c;
+                                        break;
+                                    }
+                                }
+
+                                if (cnn2close != null)
+                                {
+                                    Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Closing connection {0}", cnn2close.ToString());
+                                    cnn2close.Close();
+                                } else
+                                {
+                                    Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Cannot find connection {0} to close", cnnId);
+                                }
+                            }
+                            else
+                            {
+                                cnn.SendMessage(CreateErrorMessage("Message does not have a Connection ID value", cnn));
+                            }
+                            break;
                     }
                     break;
 
@@ -851,21 +915,21 @@ namespace Chetch.Messaging
             response.Target = request.Sender;
             response.Sender = ID;
             response.AddValue("ServerID", ID);
-            var acnns = GetActiveConnections();
-            var activecnns = new List<String>();
-            foreach(var accn in acnns)
-            {
-                activecnns.Add(accn.ToString());
-            }
+            response.AddValue("PrimaryConnection", PrimaryConnection.ToString());
             response.AddValue("SecondaryConnectionsCount", SecondaryConnections.Count);
-            var scnns = new List<String>();
+            var scnns2add = new List<String>();
             foreach(var scnn in SecondaryConnections)
             {
-                scnns.Add(scnn.ToString());
+                scnns2add.Add(scnn.ToString());
             }
-            response.AddValue("SecondaryConnections", scnns);
-            response.AddValue("ActiveConnectionsCount", activecnns.Count);
-            response.AddValue("ActiveConnections", activecnns);
+            response.AddValue("SecondaryConnections", scnns2add);
+            var cnns2add = new List<String>();
+            foreach (var c in Connections.Values)
+            {
+                cnns2add.Add(c.ToString());
+            }
+            response.AddValue("ConnectionsCount", cnns2add.Count);
+            response.AddValue("Connections", cnns2add);
             response.AddValue("MaxConnections", MaxConnections);
             return response;
         }

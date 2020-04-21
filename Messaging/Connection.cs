@@ -167,11 +167,13 @@ namespace Chetch.Messaging
 
                 if (TimedOut(ConnectionTimeout, ConnectionState.OPENED))
                 {
+                    Tracing?.TraceEvent(TraceEventType.Warning, 2000, "Connection::Monitor: Connection timeout {0} for {1}", ConnectionTimeout, ToString());
                     OnConnectionTimeout();
                 }
 
                 if (TimedOut(ActivityTimeout, ConnectionState.CONNECTED))
                 {
+                    Tracing?.TraceEvent(TraceEventType.Warning, 2000, "Connection::Monitor: Activity timeout {0} for {1}", ActivityTimeout, ToString());
                     OnActivityTimeout();
                 }
                 if (State == ConnectionState.CLOSED)
@@ -567,6 +569,14 @@ namespace Chetch.Messaging
 
                     command.Value = (String)cmdParams[0];
                     break;
+
+                case Server.CommandName.CLOSE_CONNECTION:
+                    if (cmdParams.Length < 1)
+                    {
+                        throw new Exception("Please supply connection ID");
+                    }
+                    command.AddValue("ConnectionID", cmdParams[0].ToString());
+                    break;
             }
             
             SendMessage(command);
@@ -613,6 +623,10 @@ namespace Chetch.Messaging
             SendServerCommand(Server.CommandName.STOP_TRACE_TO_CLIENT);
         }
 
+        public void CloseServerConnection(String cnnId)
+        {
+            SendServerCommand(Server.CommandName.CLOSE_CONNECTION, cnnId);
+        }
 
         /*
          * Client directed messages

@@ -51,9 +51,6 @@ namespace Chetch.Messaging
         public TCPServer(int basePort) : base()
         {
             BasePort = basePort;
-
-            var cnn = CreatePrimaryConnection(LanIP.ToString());
-            SecondaryConnections.Add((ServerConnection)cnn);
         }
 
 
@@ -92,6 +89,10 @@ namespace Chetch.Messaging
 
         public override void Start()
         {
+            SecondaryConnections.Clear();
+            var cnn = CreatePrimaryConnection(LanIP.ToString());
+            SecondaryConnections.Add((ServerConnection)cnn);
+
             base.Start();
 
             NetworkChange.NetworkAddressChanged += new NetworkAddressChangedEventHandler(HandleAddressChange);
