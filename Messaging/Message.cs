@@ -66,9 +66,11 @@ namespace Chetch.Messaging
         public String ID;
         public String Target; //to help routing to the correct place at the receive end
         public String ResponseID; //normally the ID of the message that was sent requesting a response (e.g. Ping and Ping Response)
-        public String Sender;
+        public String Sender; //who sent the message
         public MessageType Type;
         public int SubType;
+        public String Signature; //a way to test whether this message is valid or not
+
         public List<MessageValue> Values = new List<MessageValue>();
         public String Value
         {
@@ -238,6 +240,7 @@ namespace Chetch.Messaging
             vals.Add("Sender", Sender);
             vals.Add("Type", Type);
             vals.Add("SubType", SubType);
+            vals.Add("Signature", Signature);
             foreach (var mv in Values)
             {
                 vals.Add(mv.Key, mv.Value);
@@ -280,6 +283,7 @@ namespace Chetch.Messaging
             vals.Add("Sender", Sender);
             vals.Add("Type", Type);
             vals.Add("SubType", SubType);
+            vals.Add("Signature", Signature);
             foreach (var mv in Values)
             {
                 vals.Add(mv.Key, mv.Value);
@@ -395,6 +399,7 @@ namespace Chetch.Messaging
                     AssignValue<String>(ref Sender, "Sender", vals);
                     AssignValue<MessageType>(ref Type, "Type", vals);
                     AssignValue<int>(ref SubType, "SubType", vals);
+                    AssignValue<String>(ref Signature, "Signature", vals);
                     AddValues(vals);
                     break;
 
@@ -406,6 +411,7 @@ namespace Chetch.Messaging
                     AssignValue<String>(ref Sender, "Sender", vals);
                     AssignValue<MessageType>(ref Type, "Type", vals);
                     AssignValue<int>(ref SubType, "SubType", vals);
+                    AssignValue<String>(ref Signature, "Signature", vals);
                     AddValues(vals);
                     break;
 
@@ -441,7 +447,8 @@ namespace Chetch.Messaging
             s += "Response ID: " + ResponseID + lf;
             s += "Sender: " + Sender + lf;
             s += "Type: " + Type + lf;
-            s += "Sub Type: " + SubType;
+            s += "Sub Type: " + SubType + lf;
+            s += "Signature: " + Signature;
             return s;
         }
 

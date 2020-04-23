@@ -126,7 +126,7 @@ namespace Chetch.Messaging
             return base.CreatePrimaryConnection(connectionString, listener);
         }
 
-        override public Connection CreateConnection(Message message, Connection requestingCnn, Connection newCnn = null)
+        override public Connection CreateConnection(Message request, Connection requestingCnn, Connection newCnn = null)
         {
 
             IPAddress ip = ((TCPListener)requestingCnn).IP;
@@ -145,15 +145,15 @@ namespace Chetch.Messaging
             
             String id = CreateNewConnectionID();
             TCPListener listener = new TCPListener(id, ip, port, -1, -1);
-            return base.CreateConnection(message, requestingCnn, listener);
+            return base.CreateConnection(request, requestingCnn, listener);
         }
 
-        override protected Message CreateRequestResponse(Message request, Connection newCnn)
+        override protected Message CreateRequestResponse(Message request, Connection newCnn, Connection oldCnn = null)
         {
-            var response = base.CreateRequestResponse(request, newCnn);
-            if (newCnn != null)
+            var response = base.CreateRequestResponse(request, newCnn, oldCnn);
+            TCPListener listener = newCnn != null ? (TCPListener)newCnn : (oldCnn != null ? (TCPListener)oldCnn: null);
+            if (listener != null)
             {
-                TCPListener listener = (TCPListener)newCnn;
                 response.AddValue("Port", listener.Port);
                 response.AddValue("IP", listener.IP.ToString());
             }

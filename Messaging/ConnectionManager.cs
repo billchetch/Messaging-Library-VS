@@ -215,6 +215,8 @@ namespace Chetch.Messaging
             {
                 newCnn.Mgr = this;
                 newCnn.Tracing = Tracing;
+                newCnn.SignMessage = false; //sign outgoing messages
+                newCnn.ValidateMessageSignature = false; //validate signature of received messages
             }
             return newCnn;
         }
@@ -225,6 +227,8 @@ namespace Chetch.Messaging
             {
                 newCnn.Mgr = this;
                 newCnn.Tracing = Tracing;
+                newCnn.SignMessage = true; //sign outgoing messages
+                newCnn.ValidateMessageSignature = true; //validate signature of received messages
             }
             return newCnn;
         }
@@ -281,6 +285,89 @@ namespace Chetch.Messaging
             CLOSE_CONNECTION
         }
 
+        public class Subscriber
+        {
+            public String Name { get; internal set; }
+            protected List<MessageType> MessageTypes = new List<MessageType>();
+
+            public Subscriber(String name)
+            {
+                Name = name;
+            }
+
+            public void AddTypes(List<MessageType> messageTypes)
+            {
+                foreach(var mtype in messageTypes)
+                {
+                    if (!MessageTypes.Contains(mtype))
+                    {
+                        MessageTypes.Add(mtype);
+                    }
+                }
+            }
+
+            public bool SubscribesTo(MessageType mtype)
+            {
+                return MessageTypes.Contains(mtype);
+            }
+
+            public override string ToString()
+            {
+                return Name + ": " + String.Join(",", MessageTypes.ToArray());
+            }
+        }
+
+        public class Subscription
+        {
+            //the client begin subscribed to
+            public String ClientName { get; set; } = null;
+
+            //the list of clients subscribing to this client
+            protected Dictionary<String, Subscriber> Subscribers = new Dictionary<String, Subscriber>();
+
+            public Subscription(String cname)
+            {
+                ClientName = cname;
+            }
+
+            public List<Subscriber> GetSubscribers(MessageType mtype)
+            {
+                List<Subscriber> subs = new List<Subscriber>();
+                foreach(var s in Subscribers.Values)
+                {
+                    if (s.SubscribesTo(mtype))
+                    {
+                        subs.Add(s);
+                    }
+                }
+                return subs;
+            }
+
+            public void AddSubscriber(String name, List<MessageType> messageTypes)
+            {
+                if (!Subscribers.ContainsKey(name))
+                {
+                    Subscribers[name] = new Subscriber(name);
+                }
+
+                Subscribers[name].AddTypes(messageTypes);
+            }
+
+            public override string ToString()
+            {
+                StringBuilder sb = new StringBuilder();
+
+                String lf = Environment.NewLine;
+
+                sb.AppendFormat("{0}: " + lf, ClientName);
+                foreach(var sub in Subscribers.Values)
+                {
+                    sb.AppendFormat(sub.ToString() + lf);
+                }
+                return sb.ToString();
+            }
+        }
+
         protected MemoryStream MStream { get; set;  } = null;
         protected TraceListener TListener { get; set;  } = null;
         private ThreadExecutionState _trace2clientXS = null;
@@ -288,12 +375,19 @@ namespace Chetch.Messaging
         public ServerState State { get; internal set; } = ServerState.NOT_SET;
         public bool IsRunning { get { return State == ServerState.STARTED;  } }
 
-        protected List<ServerConnection> SecondaryConnections = new List<ServerConnection>(); 
+        protected List<ServerConnection> SecondaryConnections = new List<ServerConnection>();
+
+        protected Dictionary<String, Subscription> Subscriptions = new Dictionary<String, Subscription>();
+        protected MessageType[] AllowedSubscriptions = new MessageType[] { MessageType.INFO, MessageType.DATA};
 
         public Server() : base()
         {
             ID = "Server-" + GetHashCode();
             Tracing?.TraceEvent(TraceEventType.Information, 1000, "Created Server with ID {0}", ID);
+
+            //for created connections to clients
+            DefaultConnectionTimeout = 25 * 1000; //wait for this period for client to connect
+            DefaultActivityTimeout = 20 * 60 * 1000; //close after this period of inactivity
         }
 
         override public Connection CreatePrimaryConnection(String connectionString, Connection newCnn = null)
@@ -305,6 +399,7 @@ namespace Chetch.Messaging
                 newCnn.ConnectionTimeout = -1;
                 newCnn.ActivityTimeout = 10000;
                 newCnn.ServerID = ID;
+                newCnn.ValidateMessageSignature = false;
             }
             return base.CreatePrimaryConnection(connectionString, newCnn);
         }
@@ -324,17 +419,24 @@ namespace Chetch.Messaging
             return false;
         }
 
-        override public Connection CreateConnection(Message message, Connection requestingCnn, Connection newCnn = null)
+        override public Connection CreateConnection(Message request, Connection requestingCnn, Connection newCnn = null)
         {
             if(newCnn != null)
             {
                 newCnn.RemainConnected = true;
                 newCnn.RemainOpen = false;
                 newCnn.ConnectionTimeout = DefaultConnectionTimeout;
-                newCnn.ActivityTimeout = DefaultActivityTimeout;
+                newCnn.AuthToken = "AT:" + DateTime.Now.Ticks.ToString();
+
+                var ato = DefaultActivityTimeout;
+                if(request.HasValue("ActivityTimeout") && request.GetInt("ActivityTimeout") >= 1000)
+                {
+                    ato = request.GetInt("ActivityTimeout");
+                }
+                newCnn.ActivityTimeout = ato;
             }
 
-            return base.CreateConnection(message, requestingCnn, newCnn);
+            return base.CreateConnection(request, requestingCnn, newCnn);
         }
 
         virtual public void Start()
@@ -482,6 +584,23 @@ namespace Chetch.Messaging
             }
         }
 
+        protected Connection GetConnectionByNameOrID(String id)
+        {
+            if (Connections.ContainsKey(id))
+            {
+                return Connections[id];
+            }
+            var cnn = GetNamedConnection(id);
+            if (cnn != null) return cnn;
+
+            if (PrimaryConnection.ID == id) return PrimaryConnection;
+            foreach(var c in SecondaryConnections)
+            {
+                if (c.ID == id || c.Name == id) return c;
+            }
+            return null;
+        }
+
         protected Connection GetNamedConnection(String name)
         {
             foreach (var c in Connections.Values)
@@ -612,6 +731,20 @@ namespace Chetch.Messaging
             }
 
 
+            //SUBSCRIPTIONS: Here the message has been sent with no specific target (or with server target)
+            if (AllowedSubscriptions.Contains(message.Type) && Subscriptions.ContainsKey(message.Sender))
+            {
+                var subscribers = Subscriptions[message.Sender].GetSubscribers(message.Type);
+                foreach(var subscriber in subscribers)
+                {
+                    var subcnn = GetNamedConnection(subscriber.Name);
+                    if(subcnn != null && subcnn.IsConnected)
+                    {
+                        subcnn.SendMessage(message);
+                    }
+                }
+            }
+
             //SERVER MESSAGES: Here we know the message is to be handled by the Server (relayMessage = false)
             switch (message.Type)
             {
@@ -623,7 +756,8 @@ namespace Chetch.Messaging
                         String declined = null;
                         if (message.Sender == null) declined = "Anonymous connection not allowed";
                         if (Connections.Count + 1 >= MaxConnections) declined = "No available connections";
-                        if (declined == null && GetNamedConnection(message.Sender) != null)
+                        Connection oldCnn = GetNamedConnection(message.Sender);
+                        if (declined == null && oldCnn != null)
                         {
                             declined = "Another connection is already owned by " + message.Sender;
                         }
@@ -647,7 +781,7 @@ namespace Chetch.Messaging
                         //Respond
                         if (declined != null)
                         {
-                            response = CreateRequestResponse(message, null);
+                            response = CreateRequestResponse(message, null, oldCnn);
                             response.AddValue("Declined", declined);
                             cnn.SendMessage(response);
                             Tracing?.TraceEvent(TraceEventType.Warning, 1000, "Declined connection request for {0} because {1}", message.Sender, declined);
@@ -664,7 +798,7 @@ namespace Chetch.Messaging
                                 System.Threading.Thread.Sleep(100);
                             } while (!cnnreq.Succeeded && !cnnreq.Failed);
 
-                            response = CreateRequestResponse(message, cnnreq.Succeeded ? newCnn : null);
+                            response = CreateRequestResponse(message, cnnreq.Succeeded ? newCnn : null, null);
                             if (cnnreq.Failed)
                             {
                                 response.AddValue("Declined", "Connection request failed");
@@ -689,9 +823,95 @@ namespace Chetch.Messaging
                     break;
 
                 case MessageType.STATUS_REQUEST:
-                    Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} requested status", cnn.ToString());
-                    response = CreateStatusResponse(message, cnn);
+                    if (message.HasValue("ConnectionID"))
+                    {
+                        var cnnId = message.GetString("ConnectionID");
+                        var c = GetConnectionByNameOrID(cnnId);
+                        if(c != null)
+                        {
+                            Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} requested status for connection {1}", cnn.ToString(), cnnId);
+                            response = c.CreateStatusResponse(message);
+                        } else
+                        {
+                            response = CreateErrorMessage(String.Format("Cannot find connection {0}", cnnId), cnn);
+                        }
+                    } else {
+                        Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} requested server status", cnn.ToString());
+                        response = CreateStatusResponse(message, cnn);
+                    }
                     cnn.SendMessage(response);
+                    break;
+
+                case MessageType.PING:
+                    response = CreatePingResponse(message, cnn);
+                    cnn.SendMessage(response);
+                    break;
+
+                case MessageType.SUBSCRIBE:
+                    response = null;
+                    if(cnn.Name == null || cnn.Name.Length == 0)
+                    {
+                        response = CreateErrorMessage("Subscription request must be made by a Named connection", cnn);
+                    }
+                    else if (!message.HasValue("Clients") || message.GetString("Clients") == null)
+                    {
+                        response = CreateErrorMessage("Subscription request does not specify any clients", cnn);
+                    } else
+                    {
+                        var messageTypes = AllowedSubscriptions.ToList(); //TODO: make this client settable
+                        var c2s = message.GetString("Clients").Split(',');
+                        foreach (var c in c2s)
+                        {
+                            if (c == null || c.Length == 0) continue;
+
+                            var cname = c.Trim();
+                            if (!Subscriptions.ContainsKey(cname))
+                            {
+                                Subscriptions[cname] = new Subscription(cname);
+                            } else if(cname == cnn.Name)
+                            {
+                                response = CreateErrorMessage("A client cannot subscribe to itself", cnn);
+                                break;
+                            }
+
+                            Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Subscription: {0} is subscribing to {1}", cnn.Name, cname);
+                            Subscriptions[cname].AddSubscriber(cnn.Name, messageTypes);
+                        }
+                    }
+                    if (response != null)
+                    {
+                        cnn.SendMessage(response);
+                    }
+                    break;
+
+                case MessageType.UNSUBSCRIBE:
+                    response = null;
+                    if (cnn.Name == null || cnn.Name.Length == 0)
+                    {
+                        response = CreateErrorMessage("Unbsubscribe request must be made by a Named connection", cnn);
+                    }
+                    else if (!message.HasValue("Clients") || message.GetString("Clients") == null)
+                    {
+                        response = CreateErrorMessage("Unbsubscribe request does not specify any clients", cnn);
+                    } else
+                    {
+                        var c2s = message.GetString("Clients").Split(',');
+                        foreach (var c in c2s)
+                        {
+                            if (c == null || c.Length == 0) continue;
+
+                            var cname = c.Trim();
+                            if (Subscriptions.ContainsKey(cname))
+                            {
+                                Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Subscription: {0} is unsubscribing from {1}", cnn.Name, cname);
+                                Subscriptions.Remove(cname);
+                            }
+                        }
+                    }
+                    if (response != null)
+                    {
+                        cnn.SendMessage(response);
+                    }
                     break;
 
                 case MessageType.COMMAND:
@@ -889,7 +1109,7 @@ namespace Chetch.Messaging
             return message;
         }
 
-        virtual protected Message CreateRequestResponse(Message request, Connection newCnn)
+        virtual protected Message CreateRequestResponse(Message request, Connection newCnn, Connection oldCnn = null)
         {
             var response = new Message();
             response.Type = MessageType.CONNECTION_REQUEST_RESPONSE;
@@ -899,6 +1119,7 @@ namespace Chetch.Messaging
             {
                 response.Target = request.Sender;
                 response.AddValue("Granted", true);
+                response.AddValue("AuthToken", newCnn.AuthToken);
             }
             else
             {
@@ -931,6 +1152,22 @@ namespace Chetch.Messaging
             response.AddValue("ConnectionsCount", cnns2add.Count);
             response.AddValue("Connections", cnns2add);
             response.AddValue("MaxConnections", MaxConnections);
+
+            response.AddValue("SubscriptionsCount", Subscriptions.Count);
+            var subs = new List<String>();
+            foreach(var sub in Subscriptions.Values)
+            {
+                subs.Add(sub.ToString());
+            }
+            response.AddValue("Subscriptions", subs);
+            return response;
+        }
+
+        virtual protected Message CreatePingResponse(Message message, Connection cnn)
+        {
+            var response = new Message();
+            response.ResponseID = message.ID;
+            response.Type = MessageType.PING_RESPONSE;
             return response;
         }
 
@@ -999,6 +1236,8 @@ namespace Chetch.Messaging
 
         protected Queue<ConnectionRequest> ConnectionRequestQueue = new Queue<ConnectionRequest>();
         protected Dictionary<String, ServerData> Servers = new Dictionary<String, ServerData>();
+        private System.Timers.Timer _keepConnectionsAlive;
+        public int KeepAliveInterval { get; set; } = 30000;
 
         public ClientManager() : base()
         {
@@ -1039,6 +1278,11 @@ namespace Chetch.Messaging
                 T client = new T();
                 client.ID = CreateNewConnectionID();
                 client.ParseMessage(message);
+                client.ServerID = message.Sender;
+                if (message.HasValue("AuthToken"))
+                {
+                    client.AuthToken = message.GetString("AuthToken");
+                }
                 return base.CreateConnection(message, requestingCnn, client);
             }
             else
@@ -1117,7 +1361,6 @@ namespace Chetch.Messaging
                             newCnn.ConnectionTimeout = DefaultConnectionTimeout;
                             newCnn.ActivityTimeout = DefaultActivityTimeout;
                             newCnn.Name = cnnreq.Name;
-                            newCnn.ServerID = message.Sender;
                             Connections[newCnn.ID] = newCnn;
                             cnnreq.Connection = newCnn;
                             newCnn.Open();
@@ -1132,6 +1375,10 @@ namespace Chetch.Messaging
 
                 case MessageType.SHUTDOWN:
                     cnn.Close();
+                    break;
+
+                case MessageType.PING:
+
                     break;
             }
         }
@@ -1227,12 +1474,34 @@ namespace Chetch.Messaging
                 ConnectionRequests.Remove(cnnreq.ID);
             }
 
-            //here the connection is successful so we update the server with the request response data (cos it contains ServerID)
-            Servers[serverKey].ID = cnnreq.Response.Sender;
-
+            //here the connection is successful so we update the server with ServerID) and create a timer
             Tracing?.TraceEvent(TraceEventType.Information, 1000, "Connection request {0} successful", cnnreq);
 
+            Servers[serverKey].ID = cnnreq.Response.Sender;
+
+            if(_keepConnectionsAlive == null)
+            {
+                _keepConnectionsAlive = new System.Timers.Timer(KeepAliveInterval);
+                // Hook up the Elapsed event for the timer. 
+                _keepConnectionsAlive.Elapsed += KeepConnectionsAlive;
+                _keepConnectionsAlive.AutoReset = true;
+                _keepConnectionsAlive.Start();
+                Tracing?.TraceEvent(TraceEventType.Information, 1000, "Created keep alive timer");
+            }
+            
             return (ClientConnection)cnnreq.Connection;
         }
+
+        virtual public void KeepConnectionsAlive(Object source, System.Timers.ElapsedEventArgs e)
+        {
+            foreach(var cnn in Connections.Values)
+            {
+                if (cnn.IsConnected)
+                {
+                    ((ClientConnection)cnn).SendPing();
+                }
+            }
+        }
+
     } //enc ClientManager class
 }

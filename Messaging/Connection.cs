@@ -90,10 +90,12 @@ namespace Chetch.Messaging
         public ConnectionManager Mgr { get; set; } = null;
         protected Stream Stream { get; set; } = null;
         private ThreadExecutionState _startXS = null;
-        public bool RemainConnected { get; set; } = false;
-        public bool RemainOpen { get; set; } = false;
+        public bool RemainConnected { get; set; } = false; //Can be used in 'listening' loop to set whether connection waits for additional messages or not
+        public bool RemainOpen { get; set; } = false; //Can be used in 'listening' loop to set whether connection re-opens or not
         public String ServerID { get; set; }
-
+        public String AuthToken { get; set; }
+        public bool ValidateMessageSignature { get; set; } = true; //validate siganture of incoming messages
+        public bool SignMessage { get; set; } = true; //sign outgoing messages
 
         public TraceSource Tracing { get; set; } = null;
 
@@ -335,6 +337,21 @@ namespace Chetch.Messaging
             Stream.Write(msg, 0, msg.Length);
         }
 
+        virtual protected String CreateSignature(String sender = null)
+        {
+            if(AuthToken == null || AuthToken.Length == 0)
+            {
+                throw new Exception("Cannot creat signature without AuthToken");
+            }
+            return (sender == null ? Name : sender) + "-" + AuthToken;
+        }
+
+        virtual protected bool IsValidSignature(Message message)
+        {
+            var vsig = CreateSignature(message.Sender);
+            return vsig == message.Signature;
+        }
+
         protected void ReceiveMessage()
         {
             ConnectionState oldState = State;
@@ -356,6 +373,11 @@ namespace Chetch.Messaging
             if (data != null && data.Length > 0)
             {
                 var message = Message.Deserialize(data);
+                if (ValidateMessageSignature && !IsValidSignature(message))
+                {
+                    throw new MessageHandlingException("Message signature is not valid", message);
+                }
+                
                 HandleReceivedMessage(message);
             }
         }
@@ -365,6 +387,11 @@ namespace Chetch.Messaging
             ConnectionState oldState = State;
             try
             {
+                if (SignMessage)
+                {
+                    message.Signature = CreateSignature(message.Sender); 
+                }
+
                 String serialized = message.Serialize();
                 Write(serialized);
             }
@@ -377,6 +404,20 @@ namespace Chetch.Messaging
             {
                 State = oldState;
             }
+        }
+
+        virtual public Message CreateStatusResponse(Message request)
+        {
+            var m = new Message();
+            m.Type = MessageType.STATUS_RESPONSE;
+            m.AddValue("ConnectionID", ID);
+            m.AddValue("Name", Name);
+            m.AddValue("State", State.ToString());
+            m.AddValue("ActivityTimeout", ActivityTimeout);
+            m.AddValue("ConnectionTimeout", ConnectionTimeout);
+            m.AddValue("RemainConnected", RemainConnected);
+            m.AddValue("RemainOpen", RemainOpen);
+            return m;
         }
 
         public override string ToString()
@@ -432,9 +473,6 @@ namespace Chetch.Messaging
         public MessageHandler HandleMessage = null;
         public ErrorHandler HandleError = null;
 
-        protected Dictionary<String, Message> Subscribers = new Dictionary<string, Message>();
-        protected Dictionary<String, Message> Subscriptions = new Dictionary<string, Message>();
-
         private bool _tracing2Client = false;
 
         public ClientConnection() : base()
@@ -486,28 +524,21 @@ namespace Chetch.Messaging
         override protected void HandleReceivedMessage(Message message)
         {
             base.HandleReceivedMessage(message);
+
+            Message response = null;
             switch (message.Type)
             {
-                case MessageType.SUBSCRIBE:
-                    if (message.Sender != null && !Subscribers.ContainsKey(message.Sender))
-                    {
-                        Subscribers[message.Sender] = message;
-                    }
-                    break;
-
-                case MessageType.UNSUBSCRIBE:
-                    if (message.Sender != null && Subscribers.ContainsKey(message.Sender))
-                    {
-                        Subscribers.Remove(message.Sender);
-                    }
-                    break;
-
                 case MessageType.TRACE:
                     _tracing2Client = true;
                     HandleMessage?.Invoke(this, message);
                     break;
 
-               //TODO: handle error messages...
+                case MessageType.PING:
+                    response = CreatePingResponse(message);
+                    SendMessage(response);
+                    break;
+
+                //TODO: handle error messages...
                 default:
                     HandleMessage?.Invoke(this, message);
                     break;
@@ -529,9 +560,26 @@ namespace Chetch.Messaging
             base.SendMessage(message);
         }
 
+        public void SendPing(String target = null)
+        {
+            var msg = new Message();
+            msg.Type = MessageType.PING;
+            if (target != null)
+            {
+                msg.Target = target;
+            }
+            SendMessage(msg);
+        }
+
         /*
          *Server directed messages 
          */
+
+        public void PingServer()
+        {
+            SendPing(null);
+        }
+
         public void SendServerCommand(Server.CommandName cmd, params Object[] cmdParams)
         {
             var command = new Message();
@@ -591,6 +639,16 @@ namespace Chetch.Messaging
             SendMessage(request);
         }
 
+        public void RequestConnectionStatus(String cnnId = null)
+        {
+            if (!IsConnected) throw new Exception("Connection::RequestStatus: cannot request because not connected");
+
+            var request = new Message();
+            request.Type = MessageType.STATUS_REQUEST;
+            request.AddValue("ConnectionID", cnnId == null ? Name : cnnId);
+            SendMessage(request);
+        }
+
         public void SetListenerTraceLevel(String listenerName, SourceLevels level)
         {
             SendServerCommand(Server.CommandName.SET_TRACE_LEVEL, listenerName, level);
@@ -628,6 +686,42 @@ namespace Chetch.Messaging
             SendServerCommand(Server.CommandName.CLOSE_CONNECTION, cnnId);
         }
 
+        virtual public void Subscribe(String clients)
+        {
+            var msg = new Message();
+            msg.Type = MessageType.SUBSCRIBE;
+            msg.Value = "Subscription request from " + Name;
+            msg.AddValue("Clients", clients);
+            SendMessage(msg);
+        }
+
+        public void Unsubscribe(String clients)
+        {
+            var msg = new Message();
+            msg.Type = MessageType.UNSUBSCRIBE;
+            msg.Value = "Unsubscibe request from " + Name;
+            msg.AddValue("Clients", clients);
+            SendMessage(msg);
+        }
+
+        public void Notify(Message message)
+        {
+            if(message.Type == MessageType.NOT_SET)
+            {
+                message.Type = MessageType.DATA;
+            }
+            message.Target = ServerID;
+            SendMessage(message);
+        }
+
+        public void Notify(String msg)
+        {
+            var message = new Message();
+            message.Type = MessageType.DATA;
+            message.Value = msg;
+            Notify(message);
+        }
+
         /*
          * Client directed messages
          */
@@ -655,46 +749,19 @@ namespace Chetch.Messaging
             SendMessage(target, msg);
         }
 
-        virtual public void Subscribe(String target)
+        public void PingClient(String target)
         {
-            var msg = new Message();
-            msg.Type = MessageType.SUBSCRIBE;
-            msg.Value = "Subscription request from " + Name;
-            msg.Target = target;
-            var targets = target.Split(',');
-            foreach (var tgt in targets)
-            {
-                Subscriptions[tgt.Trim()] = msg;
-            }
-            SendMessage(target, msg);
+            SendPing(target);
         }
 
-        public void Unsubscribe(String target)
+        //Message creationg functions
+        virtual public Message CreatePingResponse(Message request)
         {
-            var targets = target.Split(',');
-            foreach (var tgt in targets)
-            {
-                Subscriptions.Remove(tgt.Trim());
-            }
-
-            SendMessage(target, "Unsubscribing", MessageType.UNSUBSCRIBE);
-        }
-
-        public void Notify(Message message)
-        {
-            if (Subscribers.Count > 0)
-            {
-                String targets = String.Join(",", Subscribers.Keys.ToArray());
-                SendMessage(targets, message);
-            }
-        }
-
-        public void Notify(String message, MessageType type = MessageType.INFO)
-        {
-            var msg = new Message();
-            msg.Type = type;
-            msg.Value = message;
-            Notify(msg);
+            var m = new Message();
+            m.Type = MessageType.PING_RESPONSE;
+            m.ResponseID = request.ID;
+            m.Target = request.Sender;
+            return m;
         }
 
     } //end Client connection class
