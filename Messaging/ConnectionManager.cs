@@ -285,6 +285,13 @@ namespace Chetch.Messaging
             CLOSE_CONNECTION
         }
 
+        public enum NotificationEvent
+        {
+            NOT_SET,
+            CLIENT_CONNECTED,
+            CLIENT_CLOSED
+        }
+
         public class Subscriber
         {
             public String Name { get; internal set; }
@@ -328,6 +335,11 @@ namespace Chetch.Messaging
             public Subscription(String cname)
             {
                 ClientName = cname;
+            }
+
+            public List<Subscriber> GetSubscribers()
+            {
+                return Subscribers.Values.ToList();
             }
 
             public List<Subscriber> GetSubscribers(MessageType mtype)
@@ -649,9 +661,39 @@ namespace Chetch.Messaging
             }
         }
 
+        protected void NotifySubscribers(String client, NotificationEvent notificationEvent)
+        {
+            if (!Subscriptions.ContainsKey(client))
+            {
+                return;
+            }
+
+            var subs = Subscriptions[client].GetSubscribers();
+            if (subs.Count > 0)
+            {
+                Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Notifying {0} subscribers to {1} of {2}", subs.Count, client, notificationEvent.ToString());
+                var msg = new Message(MessageType.NOTIFICATION);
+                msg.SubType = (int)notificationEvent;
+                msg.AddValue("Client", client);
+                foreach (var sub in subs)
+                {
+                    var scnn = GetNamedConnection(sub.Name);
+                    if (scnn != null && scnn.IsConnected)
+                    {
+                        scnn.SendMessage(msg);
+                    }
+                }
+            }
+        }
+
         override public void OnConnectionConnected(Connection cnn)
         {
             Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} connected", cnn.ToString());
+
+            if(cnn.Name != null && Subscriptions.ContainsKey(cnn.Name))
+            {
+                NotifySubscribers(cnn.Name, NotificationEvent.CLIENT_CONNECTED);
+            }
         }
 
         override public void OnConnectionClosing(Connection cnn)
@@ -662,6 +704,12 @@ namespace Chetch.Messaging
         override public void OnConnectionClosed(Connection cnn, List<Exception> exceptions)
         {
             Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} closed", cnn.ToString());
+
+            if (cnn.Name != null && Subscriptions.ContainsKey(cnn.Name))
+            {
+                NotifySubscribers(cnn.Name, NotificationEvent.CLIENT_CLOSED);
+            }
+
 
             if (cnn == _traceConnection)
             {
@@ -1087,8 +1135,7 @@ namespace Chetch.Messaging
                     break;
 
                 default:
-                    response = CreateErrorMessage(String.Format("{0} is not a valid message type", message.Type), cnn);
-                    cnn.SendMessage(response);
+                    //allow other messages to drop through
                     break;
             }
         }
@@ -1231,8 +1278,6 @@ namespace Chetch.Messaging
                 ConnectionString = cnnString;
             }
         }
-
-        public TraceSource Tracing { get; set; } = null;
 
         protected Queue<ConnectionRequest> ConnectionRequestQueue = new Queue<ConnectionRequest>();
         protected Dictionary<String, ServerData> Servers = new Dictionary<String, ServerData>();

@@ -97,6 +97,9 @@ namespace Chetch.Messaging
         public bool ValidateMessageSignature { get; set; } = true; //validate siganture of incoming messages
         public bool SignMessage { get; set; } = true; //sign outgoing messages
 
+        public long MessagesReceived { get; internal set; } = 0;
+        public long MessagesSent { get; internal set; } = 0;
+
         public TraceSource Tracing { get; set; } = null;
 
 
@@ -377,7 +380,8 @@ namespace Chetch.Messaging
                 {
                     throw new MessageHandlingException("Message signature is not valid", message);
                 }
-                
+
+                MessagesReceived++;
                 HandleReceivedMessage(message);
             }
         }
@@ -394,6 +398,8 @@ namespace Chetch.Messaging
 
                 String serialized = message.Serialize();
                 Write(serialized);
+
+                MessagesSent++;
             }
             catch (Exception e)
             {
@@ -417,6 +423,8 @@ namespace Chetch.Messaging
             m.AddValue("ConnectionTimeout", ConnectionTimeout);
             m.AddValue("RemainConnected", RemainConnected);
             m.AddValue("RemainOpen", RemainOpen);
+            m.AddValue("MessagesReceived", MessagesReceived);
+            m.AddValue("MessagesSent", MessagesSent);
             return m;
         }
 
