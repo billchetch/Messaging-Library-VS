@@ -120,6 +120,17 @@ namespace Chetch.Messaging
 
         }
 
+        public void Reset()
+        {
+            if (State == ConnectionState.CLOSED && (_startXS == null || _startXS.IsFinished))
+            {
+                State = ConnectionState.NOT_SET;
+            } else
+            {
+                throw new Exception(String.Format("Cannot reset connection {0} because in wrong state ({1}) or execution thread is not finished.", ToString(), State));
+            }
+        }
+
         protected void Start(Action action, int retryAttempts = 3)
         {
             String monitorId = "Monitor-" + ID;
@@ -166,7 +177,7 @@ namespace Chetch.Messaging
                 //Console.WriteLine("Monitoring connection " + ID + " has state " + State);
                 if (_startXS != null && _startXS.IsFinished)
                 {
-                    Tracing?.TraceEvent(TraceEventType.Warning, 2000, "Connection::Monitor: Exeuction thread is of state {0} but connection is of state {1} so setting connection stateo to closed.", _startXS.State, State);
+                    Tracing?.TraceEvent(TraceEventType.Warning, 2000, "Connection::Monitor: Exeuction thread  for {0} is of state {1} but connection is of state {2} so setting connection stateo to closed.", ToString(), _startXS.State, State);
                     State = ConnectionState.CLOSED;
                 }
 
@@ -357,6 +368,8 @@ namespace Chetch.Messaging
 
         protected void ReceiveMessage()
         {
+            //TODO: assert State (e.g. State == CONNECTED)
+
             ConnectionState oldState = State;
             String data = null;
             try
@@ -364,7 +377,7 @@ namespace Chetch.Messaging
                 data = Read();
                 if (data == null)
                 {
-                    throw new System.IO.IOException("Connection::ReceiveMessage: Returned null from Connection::Read " + ID + " " + GetType().ToString());
+                    throw new MessageIOException("Connection::ReceiveMessage: Returned null from Connection::Read " + ID + " " + GetType().ToString());
                 }
             }
             finally
@@ -378,7 +391,7 @@ namespace Chetch.Messaging
                 var message = Message.Deserialize(data);
                 if (ValidateMessageSignature && !IsValidSignature(message))
                 {
-                    throw new MessageHandlingException("Message signature is not valid", message);
+                    throw new MessageHandlingException(String.Format("Message signature {0} is not valid", message.Signature), message);
                 }
 
                 MessagesReceived++;
@@ -388,6 +401,11 @@ namespace Chetch.Messaging
 
         virtual public void SendMessage(Message message)
         {
+            if(State != ConnectionState.CONNECTED)
+            {
+                throw new MessageIOException(String.Format("Cannot send messge in state {0}", State));
+            }
+
             ConnectionState oldState = State;
             try
             {
@@ -482,6 +500,8 @@ namespace Chetch.Messaging
         public ErrorHandler HandleError = null;
 
         private bool _tracing2Client = false;
+
+        public bool AlwaysConnect { get; set; } = true;
 
         public ClientConnection() : base()
         {

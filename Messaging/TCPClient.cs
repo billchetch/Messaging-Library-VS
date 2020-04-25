@@ -60,7 +60,7 @@ namespace Chetch.Messaging
         }
         override protected void OnActivityTimeout()
         {
-
+            Close();
         }
 
         override protected void Connect()
@@ -85,7 +85,7 @@ namespace Chetch.Messaging
                     } while (RemainConnected);
 
                 }
-                catch (System.IO.IOException e)
+                catch (Exception e)
                 {
                     Tracing?.TraceEvent(TraceEventType.Warning, 3000, "Client: Reading exception {0} {1} connection {2}", e.GetType().ToString(), e.Message, ID);
                     //Console.WriteLine("TCPClient::Connect: Reading exception " + e.Message + " on " + remoteEP.ToString() + " (" + ID + ")");

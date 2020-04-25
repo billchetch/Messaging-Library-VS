@@ -140,6 +140,18 @@ namespace Chetch.Messaging
             LastConnectionString = connectionString;
         }
 
+        protected Connection GetNamedConnection(String name)
+        {
+            foreach (var c in Connections.Values)
+            {
+                if (c.Name != null && c.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return c;
+                }
+            }
+            return null;
+        }
+
         protected void CloseConnections()
         {
             lock (_lockConnections)
@@ -613,18 +625,6 @@ namespace Chetch.Messaging
             return null;
         }
 
-        protected Connection GetNamedConnection(String name)
-        {
-            foreach (var c in Connections.Values)
-            {
-                if (c.Name != null && c.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
-                {
-                    return c;
-                }
-            }
-            return null;
-        }
-
         protected List<Connection> GetActiveConnections()
         {
             List<Connection> connections = new List<Connection>();
@@ -818,7 +818,7 @@ namespace Chetch.Messaging
                                 Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Created connection for {0}", message.Sender);
                                 newCnn.Name = message.Sender;
                                 newCnn.ServerID = ID;
-                                Connections[newCnn.ID] = newCnn;
+                                Connections[newCnn.ID] = newCnn; //Here we add the connection to the list of connections
                             }
                             else
                             {
@@ -858,7 +858,7 @@ namespace Chetch.Messaging
 
                             cnn.SendMessage(response);
 
-                            //Finally ew can remove the connection request
+                            //Finally we can remove the connection request
                             ConnectionRequests.Remove(cnnreq.ID);
                         }
                     }
@@ -1096,27 +1096,8 @@ namespace Chetch.Messaging
                             if (message.HasValue("ConnectionID"))
                             {
                                 String cnnId = message.GetString("ConnectionID");
-                                if(cnnId == ID)
-                                {
-                                    cnn.SendMessage(CreateErrorMessage("Cannot close your own connection", cnn));
-                                    return;
-                                }
 
-                                List<Connection> cnns = new List<Connection>();
-                                cnns.Add(PrimaryConnection);
-                                cnns.AddRange(SecondaryConnections);
-                                cnns.AddRange(Connections.Values);
-
-                                Connection cnn2close = null;
-                                foreach(var c in cnns)
-                                {
-                                    if(c.ID == cnnId)
-                                    {
-                                        cnn2close = c;
-                                        break;
-                                    }
-                                }
-
+                                var cnn2close = GetConnectionByNameOrID(cnnId);
                                 if (cnn2close != null)
                                 {
                                     Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Closing connection {0}", cnn2close.ToString());
@@ -1281,6 +1262,8 @@ namespace Chetch.Messaging
 
         protected Queue<ConnectionRequest> ConnectionRequestQueue = new Queue<ConnectionRequest>();
         protected Dictionary<String, ServerData> Servers = new Dictionary<String, ServerData>();
+
+        protected Queue<Connection> ReconnectionQueue = new Queue<Connection>();
         private System.Timers.Timer _keepConnectionsAlive;
         public int KeepAliveInterval { get; set; } = 30000;
 
@@ -1328,6 +1311,11 @@ namespace Chetch.Messaging
                 {
                     client.AuthToken = message.GetString("AuthToken");
                 }
+                client.RemainConnected = true;
+                client.RemainOpen = false;
+                client.ConnectionTimeout = DefaultConnectionTimeout;
+                client.ActivityTimeout = DefaultActivityTimeout;
+
                 return base.CreateConnection(message, requestingCnn, client);
             }
             else
@@ -1373,9 +1361,25 @@ namespace Chetch.Messaging
         {
             Tracing?.TraceEvent(TraceEventType.Warning, 1000, "HandleConnectionErrors: connection {0} received {1} execeptions", cnn.ToString(), exceptions.Count());
 
+            bool reconnect = false;
             foreach (var e in exceptions)
             {
                 HandleError?.Invoke(cnn, e);
+
+                if(e is MessageIOException)
+                {
+                    Tracing?.TraceEvent(TraceEventType.Warning, 1000, "HandleConnectionErrors: MessageIOException {0}", cnn.ToString());
+                    reconnect = true;
+                }
+            }
+
+            if (reconnect)
+            {
+                ReconnectionQueue.Enqueue(cnn);
+                _keepConnectionsAlive.Stop();
+                _keepConnectionsAlive.Interval = 2000;
+                _keepConnectionsAlive.AutoReset = false;
+                _keepConnectionsAlive.Start();
             }
         }
 
@@ -1397,19 +1401,27 @@ namespace Chetch.Messaging
                             return;
                         }
 
-                        //server has granted connection so we try and make the connection here
-                        var newCnn = CreateConnection(message, cnn);
+                        //server has granted connection so we re-use or try and make a new connection here
+                        Connection newCnn = null;
+                        if(cnnreq.Connection != null)
+                        {
+                            newCnn = cnnreq.Connection;
+                            if (message.HasValue("AuthToken"))
+                            {
+                                newCnn.AuthToken = message.GetString("AuthToken");
+                            }
+                        } else
+                        {
+                            newCnn = CreateConnection(message, cnn);
+                        }
+
                         if (newCnn != null)
                         {
-                            newCnn.RemainConnected = true;
-                            newCnn.RemainOpen = false;
-                            newCnn.ConnectionTimeout = DefaultConnectionTimeout;
-                            newCnn.ActivityTimeout = DefaultActivityTimeout;
                             newCnn.Name = cnnreq.Name;
-                            Connections[newCnn.ID] = newCnn;
                             cnnreq.Connection = newCnn;
-                            newCnn.Open();
+                            Connections[newCnn.ID] = newCnn; //Here we add the connection to the list of connections
                             Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Opening connection for request {0}", cnnreq.ToString());
+                            newCnn.Open();
                         }
                         else
                         {
@@ -1453,7 +1465,7 @@ namespace Chetch.Messaging
             }
         }
 
-        virtual public ClientConnection Connect(String connectionString, String name, int timeout = -1)
+        virtual public ClientConnection Connect(String connectionString, String name, int timeout = -1, Connection cnn2reuse = null)
         {
             if (Connections.Count == MaxConnections)
             {
@@ -1474,8 +1486,11 @@ namespace Chetch.Messaging
 
             var cnnreq = AddRequest(CreateConnectionRequest(name));
             cnnreq.Name = name;
+            cnnreq.Connection = cnn2reuse;
             ConnectionRequestQueue.Enqueue(cnnreq);
-            
+            Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Requesting connection @ {0} using request {1}", connectionString, cnnreq.ToString());
+
+
             if (ConnectionRequestQueue.Peek() == cnnreq)
             {
                 PrimaryConnection.Open();
@@ -1529,7 +1544,7 @@ namespace Chetch.Messaging
                 _keepConnectionsAlive = new System.Timers.Timer(KeepAliveInterval);
                 // Hook up the Elapsed event for the timer. 
                 _keepConnectionsAlive.Elapsed += KeepConnectionsAlive;
-                _keepConnectionsAlive.AutoReset = true;
+                _keepConnectionsAlive.AutoReset = false;
                 _keepConnectionsAlive.Start();
                 Tracing?.TraceEvent(TraceEventType.Information, 1000, "Created keep alive timer");
             }
@@ -1537,15 +1552,71 @@ namespace Chetch.Messaging
             return (ClientConnection)cnnreq.Connection;
         }
 
-        virtual public void KeepConnectionsAlive(Object source, System.Timers.ElapsedEventArgs e)
+        virtual public void Reconnect(Connection cnn, int timeout = -1)
+        {
+            if (cnn.IsConnected)
+            {
+                throw new Exception(String.Format("Cannot reconnect {0} because it is already connected", cnn.ToString()));
+            }
+
+            cnn.Reset();
+
+            if (cnn.State != Connection.ConnectionState.NOT_SET)
+            {
+                throw new Exception(String.Format("Cannot reconnect {0} because it is in state {1}", cnn.ToString(), cnn.State));
+            }
+
+            String connectionString = null;
+            foreach(var server in Servers.Values)
+            {
+                if(server.ID == cnn.ServerID)
+                {
+                    connectionString = server.ConnectionString;
+                    break;
+                }
+            }
+
+            if(connectionString == null)
+            {
+                throw new Exception(String.Format("Cannot find connection sring for connection {0}", cnn.ToString()));
+            }
+
+            //here the connection is ready to re-connect and we have the original connection string
+            Connect(connectionString, cnn.Name, timeout, cnn);
+
+        }
+
+        virtual public void KeepConnectionsAlive(Object source, System.Timers.ElapsedEventArgs ea)
         {
             foreach(var cnn in Connections.Values)
             {
-                if (cnn.IsConnected)
+                var ccnn = ((ClientConnection)cnn);
+                if (ccnn.IsConnected)
                 {
-                    ((ClientConnection)cnn).SendPing();
+                    ccnn.SendPing();
                 }
             }
+            
+            var nextInterval = KeepAliveInterval;
+            if(ReconnectionQueue.Count > 0)
+            {
+                nextInterval = 2000;
+                try
+                {
+                    var cnn = ReconnectionQueue.Peek();
+                    Tracing?.TraceEvent(TraceEventType.Information, 1000, "Attempting to reconnect {0}", cnn.ToString());
+                    Reconnect(cnn, 10000);
+                    ReconnectionQueue.Dequeue();
+                } catch (Exception e)
+                {
+                    Tracing?.TraceEvent(TraceEventType.Error, 1000, e.Message);
+                }
+            }
+            
+            //set off timer again
+            _keepConnectionsAlive.AutoReset = false;
+            _keepConnectionsAlive.Interval = nextInterval;
+            _keepConnectionsAlive.Start();
         }
 
     } //enc ClientManager class
