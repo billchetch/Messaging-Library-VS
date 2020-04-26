@@ -63,13 +63,11 @@ namespace Chetch.Messaging
         {
             Close();
         }
+
         override protected void OnActivityTimeout()
         {
             //Tracing?.TraceEvent(System.Diagnostics.TraceEventType.Warning, 3000, "Activity timeout for connection {0}", ToString());
-            if (_client.Connected)
-            {
-                _client.Close();
-            }
+            Close();
         }
 
         override protected void Listen()

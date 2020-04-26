@@ -123,7 +123,7 @@ namespace Chetch.Messaging
         {
             if (_primaryConnection == null)
             {
-                Tracing?.TraceEvent(TraceEventType.Information, 1000, "Initialising primary connection");
+                Tracing?.TraceEvent(TraceEventType.Information, 1000, "Initialising primary connection with connection string {0}", connectionString);
 
                 _primaryConnection = CreatePrimaryConnection(connectionString);
             }
@@ -1368,8 +1368,12 @@ namespace Chetch.Messaging
 
                 if(e is MessageIOException)
                 {
-                    Tracing?.TraceEvent(TraceEventType.Warning, 1000, "HandleConnectionErrors: MessageIOException {0}", cnn.ToString());
-                    reconnect = true;
+                    var ioe = (MessageIOException)e;
+                    if (ioe.ConnectionState != Connection.ConnectionState.CLOSING)
+                    {
+                        Tracing?.TraceEvent(TraceEventType.Warning, 1000, "HandleConnectionErrors: MessageIOException {0}", cnn.ToString());
+                        reconnect = true;
+                    }
                 }
             }
 

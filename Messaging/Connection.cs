@@ -377,7 +377,7 @@ namespace Chetch.Messaging
                 data = Read();
                 if (data == null)
                 {
-                    throw new MessageIOException("Connection::ReceiveMessage: Returned null from Connection::Read " + ID + " " + GetType().ToString());
+                    throw new MessageIOException(this, String.Format("Connection::ReceiveMessage: Returned null from Connection::Read {0}", ID));
                 }
             }
             finally
@@ -430,10 +430,18 @@ namespace Chetch.Messaging
             }
         }
 
+        public Message CreateResponse(Message message, MessageType mtype)
+        {
+            var response = new Message(mtype);
+            response.ResponseID = message.ID;
+            response.Target = message.Sender;
+
+            return response;
+        }
+
         virtual public Message CreateStatusResponse(Message request)
         {
-            var m = new Message();
-            m.Type = MessageType.STATUS_RESPONSE;
+            var m = CreateResponse(request, MessageType.STATUS_RESPONSE);
             m.AddValue("ConnectionID", ID);
             m.AddValue("Name", Name);
             m.AddValue("State", State.ToString());
@@ -566,7 +574,11 @@ namespace Chetch.Messaging
                     SendMessage(response);
                     break;
 
-                //TODO: handle error messages...
+                case MessageType.STATUS_REQUEST:
+                    response = CreateStatusResponse(message);
+                    SendMessage(response);
+                    break;
+
                 default:
                     HandleMessage?.Invoke(this, message);
                     break;
@@ -667,13 +679,21 @@ namespace Chetch.Messaging
             SendMessage(request);
         }
 
-        public void RequestConnectionStatus(String cnnId = null)
+        public void RequestServerConnectionStatus(String cnnId = null)
         {
             if (!IsConnected) throw new Exception("Connection::RequestStatus: cannot request because not connected");
 
             var request = new Message();
             request.Type = MessageType.STATUS_REQUEST;
             request.AddValue("ConnectionID", cnnId == null ? Name : cnnId);
+            SendMessage(request);
+        }
+
+        public void RequestClientConnectionStatus(String target = null)
+        {
+            var request = new Message();
+            request.Type = MessageType.STATUS_REQUEST;
+            request.Target = target == null ? Name : target;
             SendMessage(request);
         }
 
