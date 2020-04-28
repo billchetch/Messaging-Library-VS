@@ -271,7 +271,9 @@ namespace Chetch.Messaging
         }
     } //end ConnectionManager class
 
-
+    /// <summary>
+    /// SERVER CLASS
+    /// </summary>
     abstract public class Server : ConnectionManager
     {
         public enum ServerState
@@ -301,7 +303,8 @@ namespace Chetch.Messaging
         {
             NOT_SET,
             CLIENT_CONNECTED,
-            CLIENT_CLOSED
+            CLIENT_CLOSED,
+            CUSTOM
         }
 
         public class Subscriber
@@ -402,14 +405,14 @@ namespace Chetch.Messaging
         protected List<ServerConnection> SecondaryConnections = new List<ServerConnection>();
 
         protected Dictionary<String, Subscription> Subscriptions = new Dictionary<String, Subscription>();
-        protected MessageType[] AllowedSubscriptions = new MessageType[] { MessageType.INFO, MessageType.DATA};
+        protected MessageType[] AllowedSubscriptions = new MessageType[] { MessageType.NOTIFICATION, MessageType.INFO, MessageType.WARNING, MessageType.ERROR, MessageType.DATA};
 
         public Server() : base()
         {
-            ID = "Server-" + GetHashCode();
+            ID = "SRV-" + GetHashCode() + "-" + (DateTime.Now.Ticks / 1000);
             Tracing?.TraceEvent(TraceEventType.Information, 1000, "Created Server with ID {0}", ID);
 
-            //for created connections to clients
+            //for created connections to clients.
             DefaultConnectionTimeout = 25 * 1000; //wait for this period for client to connect
             DefaultActivityTimeout = 20 * 60 * 1000; //close after this period of inactivity
         }
@@ -421,7 +424,7 @@ namespace Chetch.Messaging
                 newCnn.RemainOpen = true;
                 newCnn.RemainConnected = false;
                 newCnn.ConnectionTimeout = -1;
-                newCnn.ActivityTimeout = 10000;
+                newCnn.ActivityTimeout = 4000;
                 newCnn.ServerID = ID;
                 newCnn.ValidateMessageSignature = false;
             }
@@ -918,13 +921,15 @@ namespace Chetch.Messaging
                                 Subscriptions[cname] = new Subscription(cname);
                             } else if(cname == cnn.Name)
                             {
-                                response = CreateErrorMessage("A client cannot subscribe to itself", cnn);
-                                break;
+                                continue;
                             }
 
                             Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Subscription: {0} is subscribing to {1}", cnn.Name, cname);
                             Subscriptions[cname].AddSubscriber(cnn.Name, messageTypes);
                         }
+
+                        response = new Message(MessageType.SUBSCRIBE_RESPONSE);
+                        response.Value = "Subsription successful";
                     }
                     if (response != null)
                     {
@@ -1269,7 +1274,7 @@ namespace Chetch.Messaging
 
         public ClientManager() : base()
         {
-            ID = "ClientManager-" + GetHashCode();
+            ID = "CMGR-" + GetHashCode() + "-" + (DateTime.Now.Ticks / 1000);
             Tracing?.TraceEvent(TraceEventType.Information, 1000, "Created Client Manager with ID {0}", ID);
         }
 
@@ -1288,7 +1293,7 @@ namespace Chetch.Messaging
             PrimaryConnection.RemainOpen = false;
             PrimaryConnection.RemainConnected = false;
             PrimaryConnection.ConnectionTimeout = 10000;
-            PrimaryConnection.ActivityTimeout = 5000;
+            PrimaryConnection.ActivityTimeout = 10000;
         }
 
         override public Connection CreatePrimaryConnection(String connectionString, Connection cnn = null)
@@ -1369,9 +1374,9 @@ namespace Chetch.Messaging
                 if(e is MessageIOException)
                 {
                     var ioe = (MessageIOException)e;
-                    if (ioe.ConnectionState != Connection.ConnectionState.CLOSING)
+                    if (ioe.ConnectionState != Connection.ConnectionState.CLOSING && ioe.ConnectionState != Connection.ConnectionState.CLOSED)
                     {
-                        Tracing?.TraceEvent(TraceEventType.Warning, 1000, "HandleConnectionErrors: MessageIOException {0}", cnn.ToString());
+                        Tracing?.TraceEvent(TraceEventType.Warning, 1000, "HandleConnectionErrors: MessageIOException {0} when state {1} for connection {2}", ioe.Message, ioe.ConnectionState.ToString(), cnn.ToString());
                         reconnect = true;
                     }
                 }
@@ -1379,11 +1384,9 @@ namespace Chetch.Messaging
 
             if (reconnect)
             {
+                Tracing?.TraceEvent(TraceEventType.Information, 1000, "HandleConnectionErrors: Adding connection {0} to reconnection queue", cnn.ToString());
                 ReconnectionQueue.Enqueue(cnn);
-                _keepConnectionsAlive.Stop();
-                _keepConnectionsAlive.Interval = 2000;
-                _keepConnectionsAlive.AutoReset = false;
-                _keepConnectionsAlive.Start();
+                NextKeepAlive(2000);
             }
         }
 
@@ -1405,7 +1408,9 @@ namespace Chetch.Messaging
                             return;
                         }
 
-                        //server has granted connection so we re-use or try and make a new connection here
+                        //server has granted connection so we record server ID for primary connection and 
+                        //re -use or try and make a new connection here
+                        cnn.ServerID = message.Sender;
                         Connection newCnn = null;
                         if(cnnreq.Connection != null)
                         {
@@ -1543,15 +1548,7 @@ namespace Chetch.Messaging
 
             Servers[serverKey].ID = cnnreq.Response.Sender;
 
-            if(_keepConnectionsAlive == null)
-            {
-                _keepConnectionsAlive = new System.Timers.Timer(KeepAliveInterval);
-                // Hook up the Elapsed event for the timer. 
-                _keepConnectionsAlive.Elapsed += KeepConnectionsAlive;
-                _keepConnectionsAlive.AutoReset = false;
-                _keepConnectionsAlive.Start();
-                Tracing?.TraceEvent(TraceEventType.Information, 1000, "Created keep alive timer");
-            }
+            NextKeepAlive(KeepAliveInterval, true);
             
             return (ClientConnection)cnnreq.Connection;
         }
@@ -1563,7 +1560,10 @@ namespace Chetch.Messaging
                 throw new Exception(String.Format("Cannot reconnect {0} because it is already connected", cnn.ToString()));
             }
 
-            cnn.Reset();
+            if (cnn.State != Connection.ConnectionState.NOT_SET)
+            {
+                cnn.Reset();
+            }
 
             if (cnn.State != Connection.ConnectionState.NOT_SET)
             {
@@ -1582,12 +1582,34 @@ namespace Chetch.Messaging
 
             if(connectionString == null)
             {
-                throw new Exception(String.Format("Cannot find connection sring for connection {0}", cnn.ToString()));
+                throw new Exception(String.Format("Cannot find connection string for server connection {0} with ServerID {1}", cnn.ToString(), cnn.ServerID));
             }
 
             //here the connection is ready to re-connect and we have the original connection string
             Connect(connectionString, cnn.Name, timeout, cnn);
 
+        }
+
+        private void NextKeepAlive(int interval, bool createTimer = false)
+        {
+            if (_keepConnectionsAlive == null)
+            {
+                if (!createTimer)
+                {
+                    return;
+                }
+                _keepConnectionsAlive = new System.Timers.Timer();
+                _keepConnectionsAlive.Elapsed += KeepConnectionsAlive;
+                Tracing?.TraceEvent(TraceEventType.Information, 1000, "Created keep alive timer");
+            }
+            else
+            {
+                _keepConnectionsAlive.Stop();
+            }
+
+            _keepConnectionsAlive.Interval = interval;
+            _keepConnectionsAlive.AutoReset = false;
+            _keepConnectionsAlive.Start();
         }
 
         virtual public void KeepConnectionsAlive(Object source, System.Timers.ElapsedEventArgs ea)
@@ -1616,11 +1638,9 @@ namespace Chetch.Messaging
                     Tracing?.TraceEvent(TraceEventType.Error, 1000, e.Message);
                 }
             }
-            
+
             //set off timer again
-            _keepConnectionsAlive.AutoReset = false;
-            _keepConnectionsAlive.Interval = nextInterval;
-            _keepConnectionsAlive.Start();
+            NextKeepAlive(nextInterval);
         }
 
     } //enc ClientManager class

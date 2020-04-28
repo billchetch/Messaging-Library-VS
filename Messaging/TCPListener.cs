@@ -48,11 +48,13 @@ namespace Chetch.Messaging
             //Console.WriteLine("")
             return base.Open();
         }
+
         override public void Close()
         {
             if (State != ConnectionState.CLOSED)
             {
                 State = ConnectionState.CLOSING;
+                RemainOpen = false;
                 _listener.Stop();
                 _client?.Close();
             }
@@ -66,8 +68,15 @@ namespace Chetch.Messaging
 
         override protected void OnActivityTimeout()
         {
-            //Tracing?.TraceEvent(System.Diagnostics.TraceEventType.Warning, 3000, "Activity timeout for connection {0}", ToString());
-            Close();
+            Tracing?.TraceEvent(System.Diagnostics.TraceEventType.Warning, 3000, "Activity timeout for connection {0}", ToString());
+            if (RemainOpen)
+            {
+                _client?.Close();
+            }
+            else
+            {
+                Close();
+            }
         }
 
         override protected void Listen()

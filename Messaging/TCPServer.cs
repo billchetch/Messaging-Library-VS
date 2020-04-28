@@ -130,18 +130,24 @@ namespace Chetch.Messaging
         {
 
             IPAddress ip = ((TCPListener)requestingCnn).IP;
-            int port = -1;
+            List<int> usedPorts = new List<int>();
             foreach (var ccnn in Connections.Values)
             {
-                if (ccnn.State == Connection.ConnectionState.CLOSED)
+                usedPorts.Add(((TCPListener)ccnn).Port);
+            }
+            usedPorts.Sort();
+            int port = BasePort + 1;
+            foreach(var p in usedPorts)
+            {
+                if(p > port)
                 {
-                    port = ((TCPListener)ccnn).Port;
                     break;
                 }
+                else
+                {
+                    port++;
+                }
             }
-
-            if (port == -1) port = BasePort + Connections.Count + 1;
-
             
             String id = CreateNewConnectionID();
             TCPListener listener = new TCPListener(id, ip, port, -1, -1);

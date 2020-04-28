@@ -56,6 +56,8 @@ namespace Chetch.Messaging
                         _state = value;
                         States[value] = DateTime.Now.Ticks;
                     }
+                    //Tracing?.TraceEvent(TraceEventType.Verbose, 2000, "Connection::State change: {0} from {1} to {2}", ToString(), oldState, _state);
+
                     if (_state == ConnectionState.CLOSING)
                     {
                         OnClosing();
@@ -97,6 +99,7 @@ namespace Chetch.Messaging
         public bool ValidateMessageSignature { get; set; } = true; //validate siganture of incoming messages
         public bool SignMessage { get; set; } = true; //sign outgoing messages
 
+        public MessageEncoding MEncoding { get; set; } = MessageEncoding.JSON;
         public long MessagesReceived { get; internal set; } = 0;
         public long MessagesSent { get; internal set; } = 0;
 
@@ -228,13 +231,13 @@ namespace Chetch.Messaging
         {
             if(State == ConnectionState.CLOSED)
             {
-                Tracing?.TraceEvent(TraceEventType.Warning, 2000, "Connection::Close: {0} already of state CLOSED", ID);
+                Tracing?.TraceEvent(TraceEventType.Warning, 2000, "Connection::Close: {0} already of state CLOSED", ToString());
                 return;
             }
 
-            Tracing?.TraceEvent(TraceEventType.Verbose, 2000, "Connection::Close: {0} started closing", ID);
-
+            
             State = ConnectionState.CLOSING;
+            Tracing?.TraceEvent(TraceEventType.Verbose, 2000, "Connection::Close: {0} started closing", ToString());
 
             if (Stream != null)
             {
@@ -243,11 +246,12 @@ namespace Chetch.Messaging
                     Stream.Close();
                     Stream.Dispose();
                 }
-                catch (System.ObjectDisposedException)
+                catch (System.ObjectDisposedException e)
                 {
                     //sometimes the 'Open' thread will dispose of this and then a managing thread will try and close
                     //resulting in an ObjectDisposedException... which we ignore since the important thing is the Stream
                     //has been closed
+                    Tracing?.TraceEvent(TraceEventType.Error, 2000, "Connection::Close: exception {0} for connectino ", e.Message, ToString());
                 }
             }
 
@@ -368,27 +372,22 @@ namespace Chetch.Messaging
 
         protected void ReceiveMessage()
         {
-            //TODO: assert State (e.g. State == CONNECTED)
+            if (!CanReceive())
+            {
+                throw new MessageIOException(String.Format("Cannot receive message in state {0}", State));
+            }
 
-            ConnectionState oldState = State;
             String data = null;
-            try
+            data = Read();
+            if (data == null)
             {
-                data = Read();
-                if (data == null)
-                {
-                    throw new MessageIOException(this, String.Format("Connection::ReceiveMessage: Returned null from Connection::Read {0}", ID));
-                }
+                throw new MessageIOException(this, String.Format("Connection::ReceiveMessage: Returned null from Connection::Read {0}", ID));
             }
-            finally
-            {
-                State = oldState;
-            }
-
+            
             //This will block thread while waiting for a message
             if (data != null && data.Length > 0)
             {
-                var message = Message.Deserialize(data);
+                var message = Message.Deserialize(data, MEncoding);
                 if (ValidateMessageSignature && !IsValidSignature(message))
                 {
                     throw new MessageHandlingException(String.Format("Message signature {0} is not valid", message.Signature), message);
@@ -401,12 +400,11 @@ namespace Chetch.Messaging
 
         virtual public void SendMessage(Message message)
         {
-            if(State != ConnectionState.CONNECTED)
+            if(!CanSend())
             {
                 throw new MessageIOException(String.Format("Cannot send messge in state {0}", State));
             }
 
-            ConnectionState oldState = State;
             try
             {
                 if (SignMessage)
@@ -414,7 +412,7 @@ namespace Chetch.Messaging
                     message.Signature = CreateSignature(message.Sender); 
                 }
 
-                String serialized = message.Serialize();
+                String serialized = message.Serialize(MEncoding);
                 Write(serialized);
 
                 MessagesSent++;
@@ -424,10 +422,7 @@ namespace Chetch.Messaging
                 //Console.WriteLine("Connection::SendMessage: " + e.Message);
                 throw e;
             }
-            finally
-            {
-                State = oldState;
-            }
+            
         }
 
         public Message CreateResponse(Message message, MessageType mtype)
@@ -449,6 +444,7 @@ namespace Chetch.Messaging
             m.AddValue("ConnectionTimeout", ConnectionTimeout);
             m.AddValue("RemainConnected", RemainConnected);
             m.AddValue("RemainOpen", RemainOpen);
+            m.AddValue("MessageEncoding", MEncoding.ToString());
             m.AddValue("MessagesReceived", MessagesReceived);
             m.AddValue("MessagesSent", MessagesSent);
             return m;

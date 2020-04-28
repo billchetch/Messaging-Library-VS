@@ -47,7 +47,6 @@ namespace Chetch.Messaging
             {
                 State = ConnectionState.CLOSING;
                 RemainOpen = false; //to allow for the Connect method to exit
-                //TODO: test putting a sleep here to allow the Connect method time to exit
                 _client?.Close();
             }
             base.Close();
@@ -60,7 +59,13 @@ namespace Chetch.Messaging
         }
         override protected void OnActivityTimeout()
         {
-            Close();
+            if (RemainOpen)
+            {
+                _client?.Close();
+            } else
+            {
+                Close();
+            }
         }
 
         override protected void Connect()
@@ -76,6 +81,8 @@ namespace Chetch.Messaging
                 State = ConnectionState.OPENED;
 
                 Stream = _client.GetStream();
+                Tracing?.TraceEvent(TraceEventType.Information, 3000, "Client: Got Client stream {0}", ToString());
+
                 State = ConnectionState.CONNECTED;
                 try
                 {
@@ -85,11 +92,18 @@ namespace Chetch.Messaging
                     } while (RemainConnected);
 
                 }
+                catch (MessageIOException e)
+                {
+                    Tracing?.TraceEvent(TraceEventType.Warning, 3000, "Client: Reading exception {0} {1} connection {2}", e.GetType().ToString(), e.Message, ToString());
+                    throw e;
+                }
                 catch (Exception e)
                 {
-                    Tracing?.TraceEvent(TraceEventType.Warning, 3000, "Client: Reading exception {0} {1} connection {2}", e.GetType().ToString(), e.Message, ID);
+                    System.Threading.Thread.Sleep(200);
+                    Tracing?.TraceEvent(TraceEventType.Warning, 3000, "Client: Reading exception {0} {1} connection {2}", e.GetType().ToString(), e.Message, ToString());
                     //Console.WriteLine("TCPClient::Connect: Reading exception " + e.Message + " on " + remoteEP.ToString() + " (" + ID + ")");
-                    throw e;
+                    var ioe = new MessageIOException(this, e.Message);
+                    throw ioe;
                 }
                 finally
                 {

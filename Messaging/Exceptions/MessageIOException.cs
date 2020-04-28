@@ -21,5 +21,10 @@ namespace Chetch.Messaging
             ConnectionState = cnn.State;
             ConnectionName = cnn.Name;
         }
+
+        public override string ToString()
+        {
+            return base.ToString() + " State: " + ConnectionState.ToString();
+        }
     }
 }
