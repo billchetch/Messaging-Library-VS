@@ -101,6 +101,7 @@ namespace Chetch.Messaging
 
         public MessageEncoding MEncoding { get; set; } = MessageEncoding.JSON;
         public long MessagesReceived { get; internal set; } = 0;
+        public long GarbageReceived { get; internal set; } = 0;
         public long MessagesSent { get; internal set; } = 0;
 
         public TraceSource Tracing { get; set; } = null;
@@ -387,14 +388,24 @@ namespace Chetch.Messaging
             //This will block thread while waiting for a message
             if (data != null && data.Length > 0)
             {
-                var message = Message.Deserialize(data, MEncoding);
-                if (ValidateMessageSignature && !IsValidSignature(message))
+                Message message = null;
+                try
                 {
-                    throw new MessageHandlingException(String.Format("Message signature {0} is not valid", message.Signature), message);
+                    message = Message.Deserialize(data, MEncoding);
+                } catch (ArgumentException)
+                {
+                    GarbageReceived++;
                 }
+                if (message != null)
+                {
+                    if (ValidateMessageSignature && !IsValidSignature(message))
+                    {
+                        throw new MessageHandlingException(String.Format("Message signature {0} is not valid", message.Signature), message);
+                    }
 
-                MessagesReceived++;
-                HandleReceivedMessage(message);
+                    MessagesReceived++;
+                    HandleReceivedMessage(message);
+                }
             }
         }
 
@@ -446,6 +457,7 @@ namespace Chetch.Messaging
             m.AddValue("RemainOpen", RemainOpen);
             m.AddValue("MessageEncoding", MEncoding.ToString());
             m.AddValue("MessagesReceived", MessagesReceived);
+            m.AddValue("GarbageReceived", GarbageReceived);
             m.AddValue("MessagesSent", MessagesSent);
             return m;
         }

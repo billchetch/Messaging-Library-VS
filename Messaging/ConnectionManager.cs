@@ -1252,7 +1252,7 @@ namespace Chetch.Messaging
     /// <typeparam name="T">The type of client connection</typeparam>
     abstract public class ClientManager<T> : ConnectionManager where T : ClientConnection, new()
     {
-        protected class ServerData
+        public class ServerData
         {
             public String ID; //ID given by server
             public String Name; //name according to client
@@ -1457,11 +1457,15 @@ namespace Chetch.Messaging
             return request;
         }
 
-
         public void AddServer(String serverName, String connectionString)
         {
             Servers[serverName] = new ServerData(serverName, connectionString);
-         }
+        }
+
+        public ServerData GetServer(String serverName)
+        {
+            return Servers.ContainsKey(serverName) ? Servers[serverName] : null;
+        }
 
         virtual public ClientConnection Connect(String name, int timeout = -1)
         {
@@ -1642,6 +1646,5 @@ namespace Chetch.Messaging
             //set off timer again
             NextKeepAlive(nextInterval);
         }
-
     } //enc ClientManager class
 }

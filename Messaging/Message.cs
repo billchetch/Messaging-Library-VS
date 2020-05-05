@@ -441,7 +441,7 @@ namespace Chetch.Messaging
             }
         }
 
-        virtual protected String ToStringHeader()
+        virtual public String ToStringHeader()
         {
             String lf = Environment.NewLine;
             String s = "ID: " + ID + lf;
@@ -454,13 +454,23 @@ namespace Chetch.Messaging
             return s;
         }
 
-        virtual protected String ToStringValues()
+        virtual public String ToStringValues(bool expandLists = false)
         {
             String lf = Environment.NewLine;
             String s = "Values: " + lf;
             foreach (var v in Values)
             {
-                s += v.Key + " = " + v.Value + lf;
+                if (v.Value is System.Collections.IList && expandLists)
+                {
+                    s += v.Key + ":" + lf;
+                    foreach (var itm in (System.Collections.IList)v.Value)
+                    {
+                        s += " - " + itm.ToString() + lf;
+                    }
+                } else
+                { 
+                    s += v.Key + " = " + v.Value + lf;
+                }
             }
 
             return s;
@@ -470,7 +480,7 @@ namespace Chetch.Messaging
         {
             String lf = Environment.NewLine;
             String s = ToStringHeader();
-            s += lf + ToStringValues();
+            s += lf + ToStringValues(false);
             return s;
         }
     }
