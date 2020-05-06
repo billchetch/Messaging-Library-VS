@@ -823,6 +823,13 @@ namespace Chetch.Messaging
         }
 
         //Message creationg functions
+        override public Message CreateStatusResponse(Message request)
+        {
+            var m = base.CreateStatusResponse(request);
+            m.AddValue("Context", Context);
+            return m;
+        }
+
         virtual public Message CreatePingResponse(Message request)
         {
             var m = new Message();
