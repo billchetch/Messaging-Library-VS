@@ -215,6 +215,12 @@ namespace Chetch.Messaging
             return GetInt(key) != 0;
         }
 
+        public T GetEnum<T>(String key) where T : struct
+        {
+            var v = GetValue(key);
+            return (T)Enum.Parse(typeof(T), v.ToString());
+        }
+
         public List<T> GetList<T>(String key)
         {
             Object v = GetValue(key);

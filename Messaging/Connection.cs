@@ -826,7 +826,7 @@ namespace Chetch.Messaging
         override public Message CreateStatusResponse(Message request)
         {
             var m = base.CreateStatusResponse(request);
-            m.AddValue("Context", Context);
+            m.AddValue("Context", Context.ToString());
             return m;
         }
 
