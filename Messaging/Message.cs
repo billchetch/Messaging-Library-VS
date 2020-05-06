@@ -152,14 +152,20 @@ namespace Chetch.Messaging
 
         public bool HasValue(String key)
         {
-            try
+            if (key == null || key.Length == 0)
             {
-                return GetValue(key) != null;
+                throw new ArgumentNullException();
             }
-            catch (Exception)
+
+            var key2cmp = key.ToLower();
+            foreach (var v in Values)
             {
-                return false;
+                if (v.Key.ToLower() == key2cmp)
+                {
+                    return true;
+                }
             }
+            return false;
         }
 
         public bool HasValues(params String[] keys)
