@@ -13,6 +13,7 @@ using Chetch.Application;
 namespace Chetch.Messaging
 {
     public delegate void MessageHandler(Connection cnn, Message message);
+    public delegate void MessageModifier(Connection cnn, Message message);
     public delegate void ErrorHandler(Connection cnn, Exception e);
 
     abstract public class Connection
@@ -511,13 +512,22 @@ namespace Chetch.Messaging
 
     abstract public class ClientConnection : Connection
     {
+        public enum ClientContext
+        {
+            NOT_SET,
+            SERVICE,
+            CONTROLLER
+        }
 
         public MessageHandler HandleMessage = null;
+        public MessageModifier ModifyMessage = null;
         public ErrorHandler HandleError = null;
 
         private bool _tracing2Client = false;
 
         public bool AlwaysConnect { get; set; } = true;
+
+        public ClientContext Context { get; set; } = ClientContext.NOT_SET;
 
         public ClientConnection() : base()
         {
@@ -604,6 +614,8 @@ namespace Chetch.Messaging
             {
                 _tracing2Client = false;
             }
+
+            ModifyMessage?.Invoke(this, message);
 
             base.SendMessage(message);
         }
