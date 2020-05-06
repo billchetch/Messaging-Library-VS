@@ -104,6 +104,7 @@ namespace Chetch.Messaging
         public long MessagesReceived { get; internal set; } = 0;
         public long GarbageReceived { get; internal set; } = 0;
         public long MessagesSent { get; internal set; } = 0;
+        public long LastMessageSentOn { get; internal set; } = -1;
 
         public TraceSource Tracing { get; set; } = null;
 
@@ -307,8 +308,7 @@ namespace Chetch.Messaging
                 }
                 catch (Exception e)
                 {
-                    var x = new MessageHandlingException(message, e);
-                    throw x;
+                    throw new MessageHandlingException(message, e);
                 }
             }
         }
@@ -355,6 +355,7 @@ namespace Chetch.Messaging
 
             byte[] msg = Encoding.UTF8.GetBytes(data);
             Stream.Write(msg, 0, msg.Length);
+            Stream.Flush();
         }
 
         virtual protected String CreateSignature(String sender = null)
@@ -389,12 +390,15 @@ namespace Chetch.Messaging
             //This will block thread while waiting for a message
             if (data != null && data.Length > 0)
             {
+
+
                 Message message = null;
                 try
                 {
                     message = Message.Deserialize(data, MEncoding);
                 } catch (ArgumentException)
                 {
+                    Tracing?.TraceEvent(TraceEventType.Verbose, 2000, "Connection::ReceiveMessage: connection {0} encountered garbage {1}", ToString(), data);
                     GarbageReceived++;
                 }
                 if (message != null)
@@ -417,6 +421,13 @@ namespace Chetch.Messaging
                 throw new MessageIOException(String.Format("Cannot send messge in state {0}", State));
             }
 
+            //introduce some 'throtttling' so messages don't bunch up on the stream and
+            //arrive at the other end as more than one per 'read' as this causes deserialization issues
+            if(LastMessageSentOn > 0 && ((DateTime.Now.Ticks - LastMessageSentOn) < 1000))
+            {
+                System.Threading.Thread.Sleep(1);
+            }
+            
             try
             {
                 if (SignMessage)
@@ -426,7 +437,7 @@ namespace Chetch.Messaging
 
                 String serialized = message.Serialize(MEncoding);
                 Write(serialized);
-
+                LastMessageSentOn = DateTime.Now.Ticks;
                 MessagesSent++;
             }
             catch (Exception e)
@@ -575,6 +586,11 @@ namespace Chetch.Messaging
             
         }
 
+        private void HandleMessageDelegateWrapper(Message message)
+        {
+            HandleMessage?.Invoke(this, message);
+        }
+
         override protected void HandleReceivedMessage(Message message)
         {
             base.HandleReceivedMessage(message);
@@ -598,7 +614,10 @@ namespace Chetch.Messaging
                     break;
 
                 default:
-                    HandleMessage?.Invoke(this, message);
+                    int priorSize = ThreadExecutionManager.MaxQueueSize;
+                    ThreadExecutionManager.MaxQueueSize = 256;
+                    ThreadExecutionManager.Execute<Message>("HandleMessage-" + ID, HandleMessageDelegateWrapper, message);
+                    ThreadExecutionManager.MaxQueueSize = priorSize;
                     break;
             }
         }

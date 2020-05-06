@@ -860,6 +860,7 @@ namespace Chetch.Messaging
                             }
 
                             cnn.SendMessage(response);
+                            Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Sent response for request {0}", cnnreq.ToString());
 
                             //Finally we can remove the connection request
                             ConnectionRequests.Remove(cnnreq.ID);
@@ -1400,7 +1401,7 @@ namespace Chetch.Messaging
                         //get connection request and set the response
                         ConnectionRequest cnnreq = GetRequest(message.ResponseID);
                         cnnreq.Response = message;
-                        Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Received request respponse for request {0}", cnnreq.ToString());
+                        Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Received request response for request {0}", cnnreq.ToString());
                         cnnreq.Granted = message.GetBool("Granted");
                         if (!cnnreq.Granted)
                         {
