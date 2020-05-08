@@ -639,7 +639,7 @@ namespace Chetch.Messaging
             base.SendMessage(message);
         }
 
-        public void SendPing(String target = null)
+        public Message SendPing(String target = null)
         {
             var msg = new Message();
             msg.Type = MessageType.PING;
@@ -648,18 +648,19 @@ namespace Chetch.Messaging
                 msg.Target = target;
             }
             SendMessage(msg);
+            return msg;
         }
 
         /*
          *Server directed messages 
          */
 
-        public void PingServer()
+        public Message PingServer()
         {
-            SendPing(null);
+            return SendPing(null);
         }
 
-        public void SendServerCommand(Server.CommandName cmd, params Object[] cmdParams)
+        public Message SendServerCommand(Server.CommandName cmd, params Object[] cmdParams)
         {
             var command = new Message();
             command.Type = MessageType.COMMAND;
@@ -707,18 +708,22 @@ namespace Chetch.Messaging
             }
             
             SendMessage(command);
+
+            return command;
         }
 
-        public void RequestServerStatus()
+        public Message RequestServerStatus()
         {
             if (!IsConnected) throw new Exception("Connection::RequestStatus: cannot request because not connected");
 
             var request = new Message();
             request.Type = MessageType.STATUS_REQUEST;
             SendMessage(request);
+
+            return request;
         }
 
-        public void RequestServerConnectionStatus(String cnnId = null)
+        public Message RequestServerConnectionStatus(String cnnId = null)
         {
             if (!IsConnected) throw new Exception("Connection::RequestStatus: cannot request because not connected");
 
@@ -726,69 +731,77 @@ namespace Chetch.Messaging
             request.Type = MessageType.STATUS_REQUEST;
             request.AddValue("ConnectionID", cnnId == null ? Name : cnnId);
             SendMessage(request);
+
+            return request;
         }
 
-        public void RequestClientConnectionStatus(String target = null)
+        public Message RequestClientConnectionStatus(String target = null)
         {
             var request = new Message();
             request.Type = MessageType.STATUS_REQUEST;
             request.Target = target == null ? Name : target;
             SendMessage(request);
+
+            return request;
         }
 
-        public void SetListenerTraceLevel(String listenerName, SourceLevels level)
+        public Message SetListenerTraceLevel(String listenerName, SourceLevels level)
         {
-            SendServerCommand(Server.CommandName.SET_TRACE_LEVEL, listenerName, level);
+            return SendServerCommand(Server.CommandName.SET_TRACE_LEVEL, listenerName, level);
         }
 
-        public void SetListenerTraceLevel(String listenerName, String level)
+        public Message SetListenerTraceLevel(String listenerName, String level)
         {
             SourceLevels l = (SourceLevels)Enum.Parse(typeof(SourceLevels), level, true);
-            SetListenerTraceLevel(listenerName, l);
+            return SetListenerTraceLevel(listenerName, l);
         }
 
-        public void RestoreListenerTraceLevel(String listenerName)
+        public Message RestoreListenerTraceLevel(String listenerName)
         {
-            SendServerCommand(Server.CommandName.RESTORE_TRACE_LEVEL, listenerName);
+            return SendServerCommand(Server.CommandName.RESTORE_TRACE_LEVEL, listenerName);
         }
 
-        public void StartTracingToClient()
+        public Message StartTracingToClient()
         {
-            SendServerCommand(Server.CommandName.START_TRACE_TO_CLIENT);
+            return SendServerCommand(Server.CommandName.START_TRACE_TO_CLIENT);
         }
 
 
-        public void EchoTracingToClient(String toEcho)
+        public Message EchoTracingToClient(String toEcho)
         {
-            SendServerCommand(Server.CommandName.ECHO_TRACE_TO_CLIENT, toEcho);
+            return SendServerCommand(Server.CommandName.ECHO_TRACE_TO_CLIENT, toEcho);
         }
 
-        public void StopTracingToClient()
+        public Message StopTracingToClient()
         {
-            SendServerCommand(Server.CommandName.STOP_TRACE_TO_CLIENT);
+            return SendServerCommand(Server.CommandName.STOP_TRACE_TO_CLIENT);
         }
 
-        public void CloseServerConnection(String cnnId)
+        public Message CloseServerConnection(String cnnId)
         {
-            SendServerCommand(Server.CommandName.CLOSE_CONNECTION, cnnId);
+            return SendServerCommand(Server.CommandName.CLOSE_CONNECTION, cnnId);
         }
 
-        virtual public void Subscribe(String clients)
+        public Message Subscribe(String clients)
         {
             var msg = new Message();
             msg.Type = MessageType.SUBSCRIBE;
             msg.Value = "Subscription request from " + Name;
             msg.AddValue("Clients", clients);
             SendMessage(msg);
+
+            return msg;
         }
 
-        public void Unsubscribe(String clients)
+        public Message Unsubscribe(String clients)
         {
             var msg = new Message();
             msg.Type = MessageType.UNSUBSCRIBE;
             msg.Value = "Unsubscibe request from " + Name;
             msg.AddValue("Clients", clients);
             SendMessage(msg);
+
+            return msg;
         }
 
         public void Notify(Message message)
@@ -801,12 +814,14 @@ namespace Chetch.Messaging
             SendMessage(message);
         }
 
-        public void Notify(String msg)
+        public Message Notify(String msg)
         {
             var message = new Message();
             message.Type = MessageType.DATA;
             message.Value = msg;
             Notify(message);
+
+            return message;
         }
 
         /*
@@ -819,26 +834,30 @@ namespace Chetch.Messaging
             SendMessage(message);
         }
 
-        public void SendMessage(String target, String message, MessageType type = MessageType.INFO)
+        public Message SendMessage(String target, String message, MessageType type = MessageType.INFO)
         {
             var msg = new Message();
             msg.Type = type;
             msg.Value = message;
             SendMessage(target, msg);
+
+            return msg;
         }
 
-        public void SendCommand(String target, String command, List<Object> args = null)
+        public Message SendCommand(String target, String command, List<Object> args = null)
         {
             var msg = new Message();
             msg.Type = MessageType.COMMAND;
             msg.Value = command;
             msg.AddValue("Arguments", args);
             SendMessage(target, msg);
+
+            return msg;
         }
 
-        public void PingClient(String target)
+        public Message PingClient(String target)
         {
-            SendPing(target);
+            return SendPing(target);
         }
 
         //Message creationg functions
