@@ -105,7 +105,7 @@ namespace Chetch.Messaging
         public long GarbageReceived { get; internal set; } = 0;
         public long MessagesSent { get; internal set; } = 0;
         public long LastMessageSentOn { get; internal set; } = -1;
-
+        
         public TraceSource Tracing { get; set; } = null;
 
 
@@ -662,6 +662,11 @@ namespace Chetch.Messaging
 
         public Message SendServerCommand(Server.CommandName cmd, params Object[] cmdParams)
         {
+            return SendServerCommand(cmd, cmdParams.ToList());
+        }
+
+        public Message SendServerCommand(Server.CommandName cmd, List<Object> cmdParams)
+        {
             var command = new Message();
             command.Type = MessageType.COMMAND;
             command.SubType = (int)cmd;
@@ -671,7 +676,7 @@ namespace Chetch.Messaging
             switch (cmd)
             {
                 case Server.CommandName.SET_TRACE_LEVEL:
-                    if(cmdParams.Length < 2)
+                    if(cmdParams.Count < 2)
                     {
                         throw new Exception("Please supply a listener name and trace level");
                     }
@@ -681,7 +686,7 @@ namespace Chetch.Messaging
                     break;
 
                 case Server.CommandName.RESTORE_TRACE_LEVEL:
-                    if (cmdParams.Length < 1)
+                    if (cmdParams.Count < 1)
                     {
                         throw new Exception("Please supply a listener name");
                     }
@@ -690,7 +695,7 @@ namespace Chetch.Messaging
                     break;
 
                 case Server.CommandName.ECHO_TRACE_TO_CLIENT:
-                    if (cmdParams.Length < 1)
+                    if (cmdParams.Count < 1)
                     {
                         throw new Exception("Please supply something to echo");
                     }
@@ -699,7 +704,7 @@ namespace Chetch.Messaging
                     break;
 
                 case Server.CommandName.CLOSE_CONNECTION:
-                    if (cmdParams.Length < 1)
+                    if (cmdParams.Count < 1)
                     {
                         throw new Exception("Please supply connection ID");
                     }

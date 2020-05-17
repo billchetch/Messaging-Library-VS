@@ -1360,6 +1360,12 @@ namespace Chetch.Messaging
         override public void OnConnectionClosed(Connection cnn, List<Exception> exceptions)
         {
             Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection {0} closed", cnn.ToString());
+
+            //TODO: if conection is primary connection and there are still requests in the queue then open again
+            //this is currently not done well ... there is a queue but the connect method is not async so the request queue
+            //never populates more than 1
+
+
             base.OnConnectionClosed(cnn, exceptions);
         }
 
