@@ -8,7 +8,8 @@ namespace Chetch.Messaging
 {
     public class MessageHandlingException : Exception
     {
-        public Message Message { get; set; }
+        new public Message Message { get; set; }
+        public String ErrorMessage { get { return base.Message;  } }
 
         public MessageHandlingException(String msg, Message message, Exception e) : base(msg, e)
         {

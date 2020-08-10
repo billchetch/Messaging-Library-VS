@@ -338,7 +338,6 @@ namespace Chetch.Messaging
 
                 default:
                     throw new Exception("Unable to serialize encoding " + encoding);
-                    break;
             }
 
             return serialized;
