@@ -38,7 +38,8 @@ namespace Chetch.Messaging
         COMMAND_RESPONSE,
         TRACE,
         NOTIFICATION,
-        SUBSCRIBE_RESPONSE
+        SUBSCRIBE_RESPONSE,
+        INITIALISE_RESPONSE
     }
 
     public enum MessageEncoding
