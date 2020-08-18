@@ -208,11 +208,15 @@ namespace Chetch.Messaging
             return System.Convert.ToInt64(GetValue(key));
         }
 
+        public double GetDouble(String key)
+        {
+            return System.Convert.ToDouble(GetValue(key));
+        }
+
         public byte GetByte(String key)
         {
             return (byte)GetInt(key);
         }
-
 
         public bool GetBool(String key)
         {
