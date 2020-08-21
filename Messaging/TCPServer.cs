@@ -45,7 +45,11 @@ namespace Chetch.Messaging
         {
             return String.Format("{0}:{1}", ip.ToString(), port);
         }
-
+        public static String ConnectionString(String ip, int port)
+        {
+            return String.Format("{0}:{1}", ip, port);
+        }
+        
         protected int BasePort { get; set; } = 12000;
 
         public TCPServer(int basePort) : base()
