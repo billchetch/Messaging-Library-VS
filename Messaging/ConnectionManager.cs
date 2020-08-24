@@ -1528,13 +1528,11 @@ namespace Chetch.Messaging
                     if (timeout > 0 && elapsed > timeout)
                     {
                         var msg = String.Format("Cancelling connection request {0} due to timeout of {1}", cnnreq.ToString(), timeout);
-                        Tracing?.TraceEvent(TraceEventType.Error, 1000, "Connect exception: {0}", msg);
                         throw new TimeoutException(msg);
                     }
                     if (cnnreq.Failed)
                     {
                         var msg = String.Format("Failed request: {0} ", cnnreq.ToString());
-                        Tracing?.TraceEvent(TraceEventType.Error, 1000, "Connect exception: {0}", msg);
                         throw new Exception(msg);
                     }
 
@@ -1549,7 +1547,16 @@ namespace Chetch.Messaging
                     //Console.WriteLine("ClientManager::Connect connected = " + connected);
 
                 } while (!connected);
-            } finally
+            } catch (Exception e)
+            {
+                //
+                if(ConnectionRequestQueue.Peek() == cnnreq)
+                {
+                    ConnectionRequestQueue.Dequeue();
+                }
+                Tracing?.TraceEvent(TraceEventType.Error, 1000, "Connect exception: {0}", e.Message);
+            }
+            finally
             {
                 ConnectionRequests.Remove(cnnreq.ID);
             }
