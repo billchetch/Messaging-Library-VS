@@ -1555,6 +1555,7 @@ namespace Chetch.Messaging
                     ConnectionRequestQueue.Dequeue();
                 }
                 Tracing?.TraceEvent(TraceEventType.Error, 1000, "Connect exception: {0}", e.Message);
+                throw e;
             }
             finally
             {
