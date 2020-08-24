@@ -1550,7 +1550,7 @@ namespace Chetch.Messaging
             } catch (Exception e)
             {
                 //
-                if(ConnectionRequestQueue.Peek() == cnnreq)
+                if(ConnectionRequestQueue.Count > 0 && ConnectionRequestQueue.Peek() == cnnreq)
                 {
                     ConnectionRequestQueue.Dequeue();
                 }
