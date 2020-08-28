@@ -534,6 +534,8 @@ namespace Chetch.Messaging
         public MessageModifier ModifyMessage = null;
         public ErrorHandler HandleError = null;
 
+        protected Dictionary<String, ConnectionManager.Subscriber> Subscribers = new Dictionary<string, ConnectionManager.Subscriber>();
+
         private bool _tracing2Client = false;
 
         public bool AlwaysConnect { get; set; } = true;
@@ -586,6 +588,16 @@ namespace Chetch.Messaging
             
         }
 
+        protected void AddSubsriber(ConnectionManager.Subscriber sub)
+        {
+            if (!Subscribers.ContainsKey(sub.Name)) Subscribers[sub.Name] = sub;
+        }
+
+        protected void RemoveSubsriber(String name)
+        {
+            if (Subscribers.ContainsKey(name)) Subscribers.Remove(name);
+        }
+
         private void HandleMessageDelegateWrapper(Message message)
         {
             HandleMessage?.Invoke(this, message);
@@ -611,6 +623,12 @@ namespace Chetch.Messaging
                 case MessageType.STATUS_REQUEST:
                     response = CreateStatusResponse(message);
                     SendMessage(response);
+                    break;
+
+                case MessageType.SUBSCRIBE:
+                    break;
+
+                case MessageType.UNSUBSCRIBE:
                     break;
 
                 default:

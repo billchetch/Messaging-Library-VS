@@ -85,6 +85,52 @@ namespace Chetch.Messaging
             }
         }
 
+        public class Subscriber
+        {
+            static public Subscriber Parse(String fromString)
+            {
+                var parts = fromString.Split(':');
+                String clientName = parts[0];
+                Subscriber sub = new Subscriber(clientName);
+                List<MessageType> mts = new List<MessageType>();
+                foreach(String mt in parts[1].Split(','))
+                {
+                    mts.Add((MessageType)Enum.Parse(typeof(MessageType), mt));
+                }
+                sub.AddTypes(mts);
+                return sub;
+            }
+
+            public String Name { get; internal set; }
+            protected List<MessageType> MessageTypes = new List<MessageType>();
+
+            public Subscriber(String name)
+            {
+                Name = name;
+            }
+
+            public void AddTypes(List<MessageType> messageTypes)
+            {
+                foreach (var mtype in messageTypes)
+                {
+                    if (!MessageTypes.Contains(mtype))
+                    {
+                        MessageTypes.Add(mtype);
+                    }
+                }
+            }
+
+            public bool SubscribesTo(MessageType mtype)
+            {
+                return MessageTypes.Contains(mtype);
+            }
+
+            public override string ToString()
+            {
+                return Name + ": " + String.Join(",", MessageTypes.ToArray());
+            }
+        }
+
         public TraceSource Tracing { get; set; } = null;
 
         public MessageHandler HandleMessage = null;
@@ -306,39 +352,7 @@ namespace Chetch.Messaging
             CLIENT_CLOSED,
             CUSTOM
         }
-
-        public class Subscriber
-        {
-            public String Name { get; internal set; }
-            protected List<MessageType> MessageTypes = new List<MessageType>();
-
-            public Subscriber(String name)
-            {
-                Name = name;
-            }
-
-            public void AddTypes(List<MessageType> messageTypes)
-            {
-                foreach(var mtype in messageTypes)
-                {
-                    if (!MessageTypes.Contains(mtype))
-                    {
-                        MessageTypes.Add(mtype);
-                    }
-                }
-            }
-
-            public bool SubscribesTo(MessageType mtype)
-            {
-                return MessageTypes.Contains(mtype);
-            }
-
-            public override string ToString()
-            {
-                return Name + ": " + String.Join(",", MessageTypes.ToArray());
-            }
-        }
-
+        
         public class Subscription
         {
             //the client begin subscribed to
@@ -370,7 +384,7 @@ namespace Chetch.Messaging
                 return subs;
             }
 
-            public void AddSubscriber(String name, List<MessageType> messageTypes)
+            public Subscriber AddSubscriber(String name, List<MessageType> messageTypes)
             {
                 if (!Subscribers.ContainsKey(name))
                 {
@@ -378,6 +392,7 @@ namespace Chetch.Messaging
                 }
 
                 Subscribers[name].AddTypes(messageTypes);
+                return Subscribers[name];
             }
 
             public override string ToString()
@@ -926,7 +941,16 @@ namespace Chetch.Messaging
                             }
 
                             Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Subscription: {0} is subscribing to {1}", cnn.Name, cname);
-                            Subscriptions[cname].AddSubscriber(cnn.Name, messageTypes);
+                            Subscriber sub = Subscriptions[cname].AddSubscriber(cnn.Name, messageTypes);
+
+                            //let the client being subscribed to know
+                            var scnn = GetNamedConnection(cname);
+                            if (scnn != null && scnn.IsConnected)
+                            {
+                                var msg = new Message(MessageType.SUBSCRIBE);
+                                msg.AddValue("Subscriber", sub);
+                                scnn.SendMessage(msg);
+                            }
                         }
 
                         response = new Message(MessageType.SUBSCRIBE_RESPONSE);
@@ -959,6 +983,15 @@ namespace Chetch.Messaging
                             {
                                 Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Subscription: {0} is unsubscribing from {1}", cnn.Name, cname);
                                 Subscriptions.Remove(cname);
+                            }
+
+                            //let the client being subscribed to know
+                            var scnn = GetNamedConnection(cname);
+                            if (scnn != null && scnn.IsConnected)
+                            {
+                                var msg = new Message(MessageType.UNSUBSCRIBE);
+                                msg.AddValue("Subscriber", cnn.Name);
+                                scnn.SendMessage(msg);
                             }
                         }
                     }
@@ -1159,6 +1192,13 @@ namespace Chetch.Messaging
             {
                 response.AddValue("Granted", false);
             }
+
+            //include useful data in response
+            if (Subscriptions.ContainsKey(request.Sender))
+            {
+                response.AddValue("Subscribers", Subscriptions[request.Sender].GetSubscribers());
+            }
+
             return response;
         }
 
@@ -1325,6 +1365,17 @@ namespace Chetch.Messaging
                 client.ConnectionTimeout = DefaultConnectionTimeout;
                 client.ActivityTimeout = DefaultActivityTimeout;
 
+                if (message.HasValue("Subscribers"))
+                {
+                    List<String> subs = message.GetList<String>("Subscribers");
+                    foreach(String s in subs)
+                    {
+                        Subscriber sub = Subscriber.Parse(s);
+                        client.AddSubscriber(sub);
+                    }
+                }
+
+
                 return base.CreateConnection(message, requestingCnn, client);
             }
             else
@@ -1452,7 +1503,7 @@ namespace Chetch.Messaging
                 case MessageType.SHUTDOWN:
                     cnn.Close();
                     break;
-
+                    
                 case MessageType.PING:
 
                     break;
