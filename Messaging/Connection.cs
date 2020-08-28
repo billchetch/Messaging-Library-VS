@@ -588,12 +588,12 @@ namespace Chetch.Messaging
             
         }
 
-        protected void AddSubsriber(ConnectionManager.Subscriber sub)
+        public void AddSubscriber(ConnectionManager.Subscriber sub)
         {
             if (!Subscribers.ContainsKey(sub.Name)) Subscribers[sub.Name] = sub;
         }
 
-        protected void RemoveSubsriber(String name)
+        public void RemoveSubscriber(String name)
         {
             if (Subscribers.ContainsKey(name)) Subscribers.Remove(name);
         }
@@ -888,6 +888,7 @@ namespace Chetch.Messaging
         {
             var m = base.CreateStatusResponse(request);
             m.AddValue("Context", Context.ToString());
+            m.AddValue("Subscribers", Subscribers.Select(i => i.ToString()));
             return m;
         }
 
