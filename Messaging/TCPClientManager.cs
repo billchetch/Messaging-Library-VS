@@ -13,7 +13,7 @@ namespace Chetch.Messaging
     public class TCPClientManager : ClientManager<TCPClient>
     {
         
-        public TCPClientManager(Action<bool, ClientConnection> connectionListener = null) : base(connectionListener)
+        public TCPClientManager(Action<ClientConnection> connectListener = null) : base(connectListener)
         {
             //empty
         }
