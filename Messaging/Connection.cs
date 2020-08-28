@@ -626,9 +626,24 @@ namespace Chetch.Messaging
                     break;
 
                 case MessageType.SUBSCRIBE:
+                    if (message.HasValue("Subscriber"))
+                    {
+                        try
+                        {
+                            AddSubscriber(ConnectionManager.Subscriber.Parse(message.GetString("Subscriber"));
+                        }
+                        catch (Exception e)
+                        {
+                            Tracing?.TraceEvent(TraceEventType.Error, 2000, e.Message);
+                        }
+                    }
                     break;
 
                 case MessageType.UNSUBSCRIBE:
+                    if (message.HasValue("Subscriber"))
+                    {
+                        RemoveSubscriber(message.GetString("Subscriber"));
+                    }
                     break;
 
                 default:

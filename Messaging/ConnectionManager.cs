@@ -1370,8 +1370,13 @@ namespace Chetch.Messaging
                     List<String> subs = message.GetList<String>("Subscribers");
                     foreach(String s in subs)
                     {
-                        Subscriber sub = Subscriber.Parse(s);
-                        client.AddSubscriber(sub);
+                        try
+                        {
+                            client.AddSubscriber(Subscriber.Parse(s));
+                        } catch (Exception e)
+                        {
+                            Tracing?.TraceEvent(TraceEventType.Error, 1000, e.Message);
+                        }
                     }
                 }
 
