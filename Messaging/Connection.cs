@@ -842,20 +842,25 @@ namespace Chetch.Messaging
             return msg;
         }
 
-        public void Notify(Message message)
+        public bool Notify(Message message)
         {
+            if (Subscribers.Count == 0) return false;
+
             if(message.Type == MessageType.NOT_SET)
             {
-                message.Type = MessageType.DATA;
+                message.Type = MessageType.NOTIFICATION;
             }
             message.Target = ServerID;
             SendMessage(message);
+            return true;
         }
 
         public Message Notify(String msg)
         {
+            if (Subscribers.Count == 0) return null;
+
             var message = new Message();
-            message.Type = MessageType.DATA;
+            message.Type = MessageType.NOTIFICATION;
             message.Value = msg;
             Notify(message);
 
