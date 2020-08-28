@@ -630,7 +630,7 @@ namespace Chetch.Messaging
                     {
                         try
                         {
-                            AddSubscriber(ConnectionManager.Subscriber.Parse(message.GetString("Subscriber"));
+                            AddSubscriber(ConnectionManager.Subscriber.Parse(message.GetString("Subscriber")));
                         }
                         catch (Exception e)
                         {
