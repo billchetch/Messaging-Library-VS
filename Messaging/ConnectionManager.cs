@@ -1273,10 +1273,13 @@ namespace Chetch.Messaging
         private System.Timers.Timer _keepConnectionsAlive;
         public int KeepAliveInterval { get; set; } = 30000;
 
-        public ClientManager() : base()
+        private Action<bool, ClientConnection> _connectionListener = null;
+
+        public ClientManager(Action<bool, ClientConnection> connectionListener = null) : base()
         {
             ID = "CMGR-" + GetHashCode() + "-" + (DateTime.Now.Ticks / 1000);
             Tracing?.TraceEvent(TraceEventType.Information, 1000, "Created Client Manager with ID {0}", ID);
+            _connectionListener = connectionListener;
         }
 
         override protected void InitialisePrimaryConnection(String connectionString)
@@ -1555,6 +1558,10 @@ namespace Chetch.Messaging
                     ConnectionRequestQueue.Dequeue();
                 }
                 Tracing?.TraceEvent(TraceEventType.Error, 1000, "Connect exception: {0}", e.Message);
+                if(_connectionListener != null)
+                {
+                    _connectionListener(true, (ClientConnection)cnnreq.Connection);
+                }
                 throw e;
             }
             finally
@@ -1568,6 +1575,11 @@ namespace Chetch.Messaging
             Servers[serverKey].ID = cnnreq.Response.Sender;
 
             NextKeepAlive(KeepAliveInterval, true);
+            
+            if(_connectionListener != null)
+            {
+                _connectionListener(true, (ClientConnection)cnnreq.Connection);
+            }
             
             return (ClientConnection)cnnreq.Connection;
         }
@@ -1606,7 +1618,6 @@ namespace Chetch.Messaging
 
             //here the connection is ready to re-connect and we have the original connection string
             Connect(connectionString, cnn.Name, timeout, cnn);
-
         }
 
         private void NextKeepAlive(int interval, bool createTimer = false)
