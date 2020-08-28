@@ -1617,7 +1617,7 @@ namespace Chetch.Messaging
                 Tracing?.TraceEvent(TraceEventType.Error, 1000, "Connect exception: {0}", e.Message);
                 if(_connectionListener != null)
                 {
-                    _connectionListener(true, (ClientConnection)cnnreq.Connection);
+                    _connectionListener(false, (ClientConnection)cnnreq.Connection);
                 }
                 throw e;
             }
