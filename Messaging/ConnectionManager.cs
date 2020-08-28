@@ -948,7 +948,7 @@ namespace Chetch.Messaging
                             if (scnn != null && scnn.IsConnected)
                             {
                                 var msg = new Message(MessageType.SUBSCRIBE);
-                                msg.AddValue("Subscriber", sub);
+                                msg.AddValue("Subscriber", sub.ToString());
                                 scnn.SendMessage(msg);
                             }
                         }
@@ -1196,7 +1196,8 @@ namespace Chetch.Messaging
             //include useful data in response
             if (Subscriptions.ContainsKey(request.Sender))
             {
-                response.AddValue("Subscribers", Subscriptions[request.Sender].GetSubscribers());
+                List<String> subs = Subscriptions[request.Sender].GetSubscribers().Select(i => i.ToString()).ToList();
+                response.AddValue("Subscribers", subs);
             }
 
             return response;
