@@ -842,9 +842,24 @@ namespace Chetch.Messaging
             return msg;
         }
 
-        public bool Notify(Message message)
+        public bool CanNotify(MessageType messageType)
         {
             if (Subscribers.Count == 0) return false;
+            bool canNotify = false;
+            foreach (var sub in Subscribers.Values)
+            {
+                if (sub.SubscribesTo(messageType))
+                {
+                    canNotify = true;
+                    break;
+                }
+            }
+            return canNotify;
+        }
+
+        public bool Notify(Message message)
+        {
+            if (!CanNotify(message.Type)) return false;
 
             if(message.Type == MessageType.NOT_SET)
             {
@@ -855,15 +870,14 @@ namespace Chetch.Messaging
             return true;
         }
 
-        public Message Notify(String msg)
+        public Message Notify(String msg, MessageType messageType = MessageType.NOTIFICATION)
         {
-            if (Subscribers.Count == 0) return null;
+            if (!CanNotify(messageType)) return null;
 
             var message = new Message();
-            message.Type = MessageType.NOTIFICATION;
+            message.Type = messageType;
             message.Value = msg;
-            Notify(message);
-
+            Notify(message))
             return message;
         }
 
