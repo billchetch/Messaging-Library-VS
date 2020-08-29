@@ -842,6 +842,7 @@ namespace Chetch.Messaging
             return msg;
         }
 
+        //Notify Subscribers
         public bool CanNotify(MessageType messageType)
         {
             if (Subscribers.Count == 0) return false;
@@ -865,6 +866,7 @@ namespace Chetch.Messaging
             {
                 message.Type = MessageType.NOTIFICATION;
             }
+            message.Sender = Name; //we have to set the Sender to the client name to ensure that subscribers get the message
             message.Target = ServerID;
             SendMessage(message);
             return true;
