@@ -877,7 +877,7 @@ namespace Chetch.Messaging
             var message = new Message();
             message.Type = messageType;
             message.Value = msg;
-            Notify(message))
+            Notify(message);
             return message;
         }
 
