@@ -400,7 +400,7 @@ namespace Chetch.Messaging
             return Deserialize<Message>(s, encoding);
         }
 
-        public void OnDeserialize(String s, MessageEncoding encoding)
+        virtual protected void OnDeserialize(String s, MessageEncoding encoding)
         {
             Dictionary<String, Object> vals;
             switch (encoding)
