@@ -590,12 +590,17 @@ namespace Chetch.Messaging
 
         public void AddSubscriber(ConnectionManager.Subscriber sub)
         {
-            if (!Subscribers.ContainsKey(sub.Name)) Subscribers[sub.Name] = sub;
+            if (!HasSubscriber(sub.Name)) Subscribers[sub.Name] = sub;
         }
 
         public void RemoveSubscriber(String name)
         {
-            if (Subscribers.ContainsKey(name)) Subscribers.Remove(name);
+            if (HasSubscriber(name)) Subscribers.Remove(name);
+        }
+
+        public bool HasSubscriber(String name)
+        {
+            return Subscribers.ContainsKey(name);
         }
 
         private void HandleMessageDelegateWrapper(Message message)
