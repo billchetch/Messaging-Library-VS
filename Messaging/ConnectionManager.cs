@@ -770,7 +770,7 @@ namespace Chetch.Messaging
                 switch (message.Type)
                 {
                     case MessageType.CONNECTION_REQUEST:
-                        response = CreateErrorMessage(String.Format("{0} is not a valid message type", message.Type), cnn);
+                        response = CreateErrorMessage(String.Format("Server {0} cannot relay messages of type {1}", ID, message.Type), cnn);
                         cnn.SendMessage(response);
                         break;
 
@@ -787,7 +787,7 @@ namespace Chetch.Messaging
                             }
                             else
                             {
-                                response = CreateErrorMessage(tgt + " is not connected.", cnn);
+                                response = CreateErrorMessage(String.Format("Server {0} cannot relay message to {1} as it is not connected.", ID, tgt), cnn);
                                 cnn.SendMessage(response);
                             }
                         }
