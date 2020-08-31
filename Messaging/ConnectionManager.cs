@@ -787,7 +787,7 @@ namespace Chetch.Messaging
                             }
                             else
                             {
-                                response = CreateErrorMessage(String.Format("Server {0} cannot relay message to {1} as it is not connected.", ID, tgt), cnn);
+                                response = CreateErrorMessage(String.Format("Server {0} cannot relay message ({1}) to {2} as it is not connected.", ID, message.Type, tgt), cnn);
                                 cnn.SendMessage(response);
                             }
                         }
