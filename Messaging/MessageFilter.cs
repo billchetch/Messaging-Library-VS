@@ -6,9 +6,12 @@ using System.Threading.Tasks;
 
 namespace Chetch.Messaging
 {
+    /// <summary>
+    /// Set filter criteria, provide an on Matched handler and then assign HandleMessage to a Client.HandleMessage event to receive filtered messages
+    /// </summary>
     public class MessageFilter
     {
-        public String Sender { get; internal set; ;
+        public String Sender { get; internal set; }
         private List<MessageType> _types = null;
         private Action<Message> _onMatched;
 
