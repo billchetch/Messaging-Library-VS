@@ -536,6 +536,8 @@ namespace Chetch.Messaging
 
         protected Dictionary<String, ConnectionManager.Subscriber> Subscribers = new Dictionary<string, ConnectionManager.Subscriber>();
 
+        private List<MessageFilter> _subsriptionFilters = new List<MessageFilter>();
+
         private bool _tracing2Client = false;
 
         public bool AlwaysConnect { get; set; } = true;
@@ -825,6 +827,21 @@ namespace Chetch.Messaging
             return SendServerCommand(Server.CommandName.CLOSE_CONNECTION, cnnId);
         }
 
+        public Message Subscribe(MessageFilter messageFilter)
+        {
+            if(messageFilter.Sender == null || messageFilter.Sender == String.Empty)
+            {
+                throw new Exception("To subscribe the message filter must have a Sender value");
+            }
+            _subsriptionFilters.Add(messageFilter);
+
+            if (messageFilter.HasMatchedListener)
+            {
+                HandleMessage += messageFilter.HandleMessage;
+            }
+            return Subscribe(messageFilter.Sender);
+        }
+
         public Message Subscribe(String clients)
         {
             var msg = new Message();
@@ -843,6 +860,27 @@ namespace Chetch.Messaging
             msg.Value = "Unsubscibe request from " + Name;
             msg.AddValue("Clients", clients);
             SendMessage(msg);
+
+            if (_subsriptionFilters.Count > 0)
+            {
+                List<MessageFilter> toRemove = new List<MessageFilter>();
+                var parts = clients.Split(',');
+                foreach (var client in parts)
+                {
+                    foreach (MessageFilter f in _subsriptionFilters)
+                    {
+                        if (f.Sender.Equals(client.Trim()))
+                        {
+                            if(f.HasMatchedListener)HandleMessage -= f.HandleMessage;
+                            toRemove.Add(f);
+                        }
+                    }
+                }
+                foreach(MessageFilter r in toRemove)
+                {
+                    _subsriptionFilters.Remove(r);
+                }
+            }
 
             return msg;
         }

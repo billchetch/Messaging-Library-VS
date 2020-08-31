@@ -692,7 +692,7 @@ namespace Chetch.Messaging
                 Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Notifying {0} subscribers to {1} of {2}", subs.Count, client, notificationEvent.ToString());
                 var msg = new Message(MessageType.NOTIFICATION);
                 msg.SubType = (int)notificationEvent;
-                msg.AddValue("Client", client);
+                msg.Sender = client;
                 foreach (var sub in subs)
                 {
                     var scnn = GetNamedConnection(sub.Name);
