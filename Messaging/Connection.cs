@@ -530,9 +530,9 @@ namespace Chetch.Messaging
             CONTROLLER
         }
 
-        public MessageHandler HandleMessage = null;
-        public MessageModifier ModifyMessage = null;
-        public ErrorHandler HandleError = null;
+        public event MessageHandler HandleMessage;
+        public event MessageModifier ModifyMessage;
+        public event ErrorHandler HandleError;
 
         protected Dictionary<String, ConnectionManager.Subscriber> Subscribers = new Dictionary<string, ConnectionManager.Subscriber>();
 
