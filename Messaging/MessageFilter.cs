@@ -57,10 +57,15 @@ namespace Chetch.Messaging
                 if (!matched) return;
             }
 
-            if (matched && _onMatched != null)
+            if (matched)
             {
-                _onMatched(message);
+                OnMatched(message);    
             }
+        }
+
+        virtual protected void OnMatched(Message message)
+        {
+            _onMatched?.Invoke(message);
         }
     }
 }
