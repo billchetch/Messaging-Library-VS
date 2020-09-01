@@ -420,7 +420,7 @@ namespace Chetch.Messaging
         protected List<ServerConnection> SecondaryConnections = new List<ServerConnection>();
 
         protected Dictionary<String, Subscription> Subscriptions = new Dictionary<String, Subscription>();
-        protected MessageType[] AllowedSubscriptions = new MessageType[] { MessageType.NOTIFICATION, MessageType.INFO, MessageType.WARNING, MessageType.ERROR, MessageType.DATA};
+        protected MessageType[] AllowedSubscriptions = new MessageType[] { MessageType.NOTIFICATION, MessageType.INFO, MessageType.WARNING, MessageType.ERROR, MessageType.DATA, MessageType.ALERT};
 
         public Server() : base()
         {
