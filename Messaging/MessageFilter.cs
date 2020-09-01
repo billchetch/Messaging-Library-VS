@@ -44,23 +44,28 @@ namespace Chetch.Messaging
 
         public void HandleMessage(Connection cnn, Message message)
         {
+            if (Matches(message))
+            {
+                OnMatched(message);    
+            }
+        }
+
+        virtual protected bool Matches(Message message)
+        {
             bool matched = true;
             if (Sender != null && message.Sender != null)
             {
                 matched = Sender.Equals(message.Sender);
-                if (!matched) return;
+                if (!matched) return false;
             }
 
             if (_types != null && _types.Count > 0)
             {
                 matched = _types.Contains(message.Type);
-                if (!matched) return;
+                if (!matched) return false;
             }
 
-            if (matched)
-            {
-                OnMatched(message);    
-            }
+            return matched;
         }
 
         virtual protected void OnMatched(Message message)
