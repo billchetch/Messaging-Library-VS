@@ -13,11 +13,11 @@ namespace Chetch.Messaging
     {
         public String Sender { get; internal set; }
         private List<MessageType> _types = null;
-        private Action<Message> _onMatched;
+        private Action<MessageFilter, Message> _onMatched;
 
         public bool HasMatchedListener { get { return _onMatched != null; } }
 
-        public MessageFilter(String sender, MessageType type, Action<Message> onMatched)
+        public MessageFilter(String sender, MessageType type, Action<MessageFilter, Message> onMatched)
         {
             Sender = sender;
             _types = new List<MessageType>();
@@ -25,18 +25,18 @@ namespace Chetch.Messaging
             _onMatched = onMatched;
         }
 
-        public MessageFilter(String sender, MessageType[] types, Action<Message> onMatched)
+        public MessageFilter(String sender, MessageType[] types, Action<MessageFilter, Message> onMatched)
         {
             Sender = sender;
             _types = new List<MessageType>(types);
             _onMatched = onMatched;
         }
 
-        public MessageFilter(MessageType[] types, Action<Message> onMatched) : this(null, types, onMatched) { }
+        public MessageFilter(MessageType[] types, Action<MessageFilter, Message> onMatched) : this(null, types, onMatched) { }
 
-        public MessageFilter(MessageType type, Action<Message> onMatched) : this(null, type, onMatched) { }
+        public MessageFilter(MessageType type, Action<MessageFilter, Message> onMatched) : this(null, type, onMatched) { }
 
-        public MessageFilter(String sender, Action<Message> onMatched)
+        public MessageFilter(String sender, Action<MessageFilter, Message> onMatched)
         {
             Sender = sender;
             _onMatched = onMatched;
@@ -70,7 +70,7 @@ namespace Chetch.Messaging
 
         virtual protected void OnMatched(Message message)
         {
-            _onMatched?.Invoke(message);
+            _onMatched?.Invoke(this, message);
         }
     }
 }
