@@ -784,6 +784,7 @@ namespace Chetch.Messaging
                             {
                                 message.Target = tgt;
                                 ncnn.SendMessage(message);
+                                //Tracing?.TraceEvent(TraceEventType.Information, 1000, "Server {0} relaying message from {1} to {2}", ID, message.Sender, tgt);
                             }
                             else
                             {

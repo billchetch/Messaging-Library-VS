@@ -355,6 +355,31 @@ namespace Chetch.Messaging
             return Serialize(DefaultEncoding);
         }
 
+        public static List<String> Split(String serialized, MessageEncoding encoding)
+        {
+            List<String> split = new List<String>();
+            switch (encoding)
+            {
+                case MessageEncoding.JSON:
+                    if (serialized.IndexOf("}{") >= 0) {
+                        serialized = "}" + serialized + "{";
+                        var parts = serialized.Split(new String[] { "}{" }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach(var part in parts)
+                        {
+                            split.Add("{" + part + "}");
+                        }
+                    } else
+                    {
+                        split.Add(serialized);
+                    }
+                    break;
+
+                default:
+                    throw new NotImplementedException();
+            }
+            return split;
+        }
+
         public static T Deserialize<T>(String s, MessageEncoding encoding = MessageEncoding.XML) where T : Message, new()
         {
             T t;

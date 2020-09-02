@@ -390,26 +390,29 @@ namespace Chetch.Messaging
             //This will block thread while waiting for a message
             if (data != null && data.Length > 0)
             {
-
-
-                Message message = null;
-                try
-                {
-                    message = Message.Deserialize(data, MEncoding);
-                } catch (ArgumentException)
-                {
-                    Tracing?.TraceEvent(TraceEventType.Verbose, 2000, "Connection::ReceiveMessage: connection {0} encountered garbage {1}", ToString(), data);
-                    GarbageReceived++;
-                }
-                if (message != null)
-                {
-                    if (ValidateMessageSignature && !IsValidSignature(message))
+                List<String> messages = Message.Split(data, MEncoding);
+                for (int i = 0; i < messages.Count; i++) { 
+                    Message message = null;
+                    String mdata = null;
+                    try
                     {
-                        throw new MessageHandlingException(String.Format("Message signature {0} is not valid", message.Signature), message);
+                        mdata = messages[i];
+                        message = Message.Deserialize(mdata, MEncoding);
+                    } catch (ArgumentException)
+                    {
+                        Tracing?.TraceEvent(TraceEventType.Verbose, 2000, "Connection::ReceiveMessage: connection {0} encountered garbage {1}", ToString(), mdata);
+                        GarbageReceived++;
                     }
+                    if (message != null)
+                    {
+                        if (ValidateMessageSignature && !IsValidSignature(message))
+                        {
+                            throw new MessageHandlingException(String.Format("Message signature {0} is not valid", message.Signature), message);
+                        }
 
-                    MessagesReceived++;
-                    HandleReceivedMessage(message);
+                        MessagesReceived++;
+                        HandleReceivedMessage(message);
+                    }
                 }
             }
         }
