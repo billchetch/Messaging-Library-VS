@@ -14,6 +14,9 @@ namespace Chetch.Messaging
     {
         public Message Message { get; set; }
 
+
+        public MessageSchema() { }
+
         public MessageSchema(Message message)
         {
             Message = message;
