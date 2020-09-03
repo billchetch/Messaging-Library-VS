@@ -540,6 +540,8 @@ namespace Chetch.Messaging
         {
             String lf = Environment.NewLine;
             String s = "Values: " + lf;
+            var jsonSerializer = new System.Web.Script.Serialization.JavaScriptSerializer();
+            
             foreach (var v in Values)
             {
                 if (v.Value is System.Collections.IList && expandLists)
@@ -552,10 +554,13 @@ namespace Chetch.Messaging
                 } else if (v.Value.GetType().IsGenericType && v.Value.GetType().GetGenericTypeDefinition() == typeof(Dictionary<,>))
                 {
                     s += v.Key + ":" + lf;
-                    var d = GetDictionary<String>(v.Key);
+
+                    //We use json serializer here to avoid type issues as we only want strings (e.g. for display)
+                    var serialized = jsonSerializer.Serialize(v.Value);
+                    var d = jsonSerializer.Deserialize<Dictionary<String, String>>(serialized);
                     foreach(var kv in d)
                     {
-                        s += " - " + kv.Key + "=" + kv.Value + lf;
+                        s += " - " + kv.Key + " = " + kv.Value + lf;
                     }
                 } else
                 { 
