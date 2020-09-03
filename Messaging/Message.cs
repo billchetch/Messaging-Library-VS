@@ -110,9 +110,21 @@ namespace Chetch.Messaging
             Type = type;
         }
 
-        public Message(String message, MessageType type = MessageType.NOT_SET) : this(message, 0, type)
+        public Message(String message, MessageType type = MessageType.NOT_SET) : this(message, 0, type){}
+
+        public Message(Message message)
         {
-            //empty
+            Target = message.Target;
+            ResponseID = message.ResponseID;
+            Type = message.Type;
+            SubType = message.SubType;
+            Sender = message.Sender;
+            Value = message.Value;
+
+            foreach(var mv in message.Values)
+            {
+                AddValue(mv.Key, mv.Value);
+            }
         }
 
         private String CreateID()
