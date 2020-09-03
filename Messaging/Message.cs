@@ -536,6 +536,21 @@ namespace Chetch.Messaging
             return s;
         }
 
+
+        private String _nullOrEmpty(Object o)
+        {
+            if(o == null)
+            {
+                return "[null]";
+            } else if(o.ToString() == String.Empty)
+            {
+                return "[empty]";
+            } else
+            {
+                return o.ToString();
+            }
+        }
+
         virtual public String ToStringValues(bool expandLists = false)
         {
             String lf = Environment.NewLine;
@@ -549,9 +564,9 @@ namespace Chetch.Messaging
                     s += v.Key + ":" + lf;
                     foreach (var itm in (System.Collections.IList)v.Value)
                     {
-                        s += " - " + itm.ToString() + lf;
+                        s += " - " + _nullOrEmpty(itm) + lf;
                     }
-                } else if (v.Value.GetType().IsGenericType && v.Value.GetType().GetGenericTypeDefinition() == typeof(Dictionary<,>))
+                } else if (v.Value != null && v.Value.GetType().IsGenericType && v.Value.GetType().GetGenericTypeDefinition() == typeof(Dictionary<,>))
                 {
                     s += v.Key + ":" + lf;
 
@@ -560,11 +575,11 @@ namespace Chetch.Messaging
                     var d = jsonSerializer.Deserialize<Dictionary<String, String>>(serialized);
                     foreach(var kv in d)
                     {
-                        s += " - " + kv.Key + " = " + kv.Value + lf;
+                        s += " - " + kv.Key + " = " + _nullOrEmpty(kv.Value) + lf;
                     }
                 } else
                 { 
-                    s += v.Key + " = " + v.Value + lf;
+                    s += v.Key + " = " + _nullOrEmpty(v.Value) + lf;
                 }
             }
 
