@@ -12,19 +12,24 @@ namespace Chetch.Messaging
     /// </summary>
     public class MessageSchema
     {
-        public MessageSchema() { }
+        protected Message Message;
+
+        public MessageSchema(Message message)
+        {
+            Message = message;
+        }
 
         //TODO: add conforms chect
-        virtual public bool ConformsToSchema(Message message)
+        virtual public bool ConformsToSchema()
         {
             return true;
         }
 
-        public void AssertConformsToSchema(Message message)
+        public void AssertConformsToSchema()
         {
-            if (!ConformsToSchema(message))
+            if (!ConformsToSchema())
             {
-                throw new Exception(String.Format("Message (type={0}) from {1} does not conform to schema {2}", message.Type, message.Sender, this.GetType().FullName));
+                throw new Exception(String.Format("Message (type={0}) from {1} does not conform to schema {2}", Message.Type, Message.Sender, this.GetType().FullName));
             }
         }
     }
