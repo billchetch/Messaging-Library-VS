@@ -20,16 +20,26 @@ namespace Chetch.Messaging
         }
 
         //TODO: add conforms chect
-        virtual public bool ConformsToSchema()
+        virtual public bool ConformsToSchema(Message message)
         {
             return true;
         }
 
-        public void AssertConformsToSchema()
+        public bool MessageConforms()
         {
-            if (!ConformsToSchema())
+            return ConformsToSchema(Message);
+        }
+
+        public void AssertMessageConforms()
+        {
+            AssertConformsToSchema(Message);
+        }
+
+        public void AssertConformsToSchema(Message message)
+        {
+            if (!ConformsToSchema(message))
             {
-                throw new Exception(String.Format("Message (type={0}) from {1} does not conform to schema {2}", Message.Type, Message.Sender, this.GetType().FullName));
+                throw new Exception(String.Format("Message (type={0}) from {1} does not conform to schema {2}", message.Type, message.Sender, this.GetType().FullName));
             }
         }
     }
