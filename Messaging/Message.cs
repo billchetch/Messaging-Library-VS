@@ -243,7 +243,26 @@ namespace Chetch.Messaging
             }
 
             throw new Exception("Cannot convert to List as value is of type " + v.GetType().ToString());
+        }
 
+        //Due to JSON serialization we only support dictionaries that have string keys
+        public Dictionary<String, T> GetDictionary<T>(Object value)
+        {
+            Dictionary<String, T> dictionary = new Dictionary<String, T>();
+            var temp = (Dictionary<String, Object>)value;
+            Type ttype = typeof(T);
+            foreach (var kv in temp)
+            {
+                if (ttype.IsEnum)
+                {
+                    dictionary[kv.Key] = (T)Enum.Parse(typeof(T), kv.Value.ToString());
+                }
+                else
+                {
+                    dictionary[kv.Key] = (T)kv.Value;
+                }
+            }
+            return dictionary;
         }
 
         public void Clear()
