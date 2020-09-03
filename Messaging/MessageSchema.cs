@@ -12,7 +12,7 @@ namespace Chetch.Messaging
     /// </summary>
     public class MessageSchema
     {
-        protected Message Message;
+        public Message Message { get; set; }
 
         public MessageSchema(Message message)
         {
