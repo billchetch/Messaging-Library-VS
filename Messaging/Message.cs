@@ -258,10 +258,10 @@ namespace Chetch.Messaging
         }
 
         //Due to JSON serialization we only support dictionaries that have string keys
-        public Dictionary<String, T> GetDictionary<T>(Object value)
+        public Dictionary<String, T> GetDictionary<T>(String key)
         {
             Dictionary<String, T> dictionary = new Dictionary<String, T>();
-            var temp = (Dictionary<String, Object>)value;
+            var temp = (Dictionary<String, Object>)GetValue(key);
             Type ttype = typeof(T);
             foreach (var kv in temp)
             {
@@ -269,12 +269,21 @@ namespace Chetch.Messaging
                 {
                     dictionary[kv.Key] = (T)Enum.Parse(typeof(T), kv.Value.ToString());
                 }
-                else
+                else if(ttype == typeof(String))
+                {
+                    String s = kv.Value.ToString();
+                    dictionary[kv.Key] = (T)(Object)s;
+                }
                 {
                     dictionary[kv.Key] = (T)kv.Value;
                 }
             }
             return dictionary;
+        }
+
+        public Dictionary<String, Object> GetDictionary(String key)
+        {
+            return (Dictionary<String, Object>)GetValue(key);
         }
 
         public void Clear()
