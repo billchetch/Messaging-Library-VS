@@ -549,7 +549,7 @@ namespace Chetch.Messaging
                     {
                         s += " - " + itm.ToString() + lf;
                     }
-                } else if (v.Value.GetType().IsGenericType && typeof(IDictionary<,>).IsAssignableFrom(v.Value.GetType().GetGenericTypeDefinition()))
+                } else if (v.Value.GetType().IsGenericType && v.Value.GetType().GetGenericTypeDefinition() == typeof(Dictionary<,>))
                 {
                     s += v.Key + ":" + lf;
                     var d = GetDictionary<String>(v.Key);
