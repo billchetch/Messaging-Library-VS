@@ -549,6 +549,14 @@ namespace Chetch.Messaging
                     {
                         s += " - " + itm.ToString() + lf;
                     }
+                } else if (v.Value.GetType().IsGenericType && typeof(IDictionary<,>).IsAssignableFrom(v.Value.GetType().GetGenericTypeDefinition()))
+                {
+                    s += v.Key + ":" + lf;
+                    var d = GetDictionary<String>(v.Key);
+                    foreach(var kv in d)
+                    {
+                        s += " - " + kv.Key + "=" + kv.Value + lf;
+                    }
                 } else
                 { 
                     s += v.Key + " = " + v.Value + lf;
