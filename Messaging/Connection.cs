@@ -93,6 +93,7 @@ namespace Chetch.Messaging
         public ConnectionManager Mgr { get; set; } = null;
         protected Stream Stream { get; set; } = null;
         private ThreadExecutionState _startXS = null;
+        private ThreadExecutionState _monitorXS = null;
         public bool RemainConnected { get; set; } = false; //Can be used in 'listening' loop to set whether connection waits for additional messages or not
         public bool RemainOpen { get; set; } = false; //Can be used in 'listening' loop to set whether connection re-opens or not
         public String ServerID { get; set; }
@@ -147,7 +148,7 @@ namespace Chetch.Messaging
                 {
                     _startXS = ThreadExecutionManager.Execute(ID, action);
                     if (_startXS == null) throw new Exception("Connection::Start: Unable to create thread for connection " + ID);
-                    ThreadExecutionManager.Execute(monitorId, this.Monitor);
+                    _monitorXS = ThreadExecutionManager.Execute(monitorId, this.Monitor);
                     Tracing?.TraceEvent(TraceEventType.Verbose, 2000, "Connection::Start: Created execution thread {0} and monitor thrad{1}", ID, monitorId);
 
                     break;
@@ -183,7 +184,7 @@ namespace Chetch.Messaging
                 //Console.WriteLine("Monitoring connection " + ID + " has state " + State);
                 if (_startXS != null && _startXS.IsFinished)
                 {
-                    Tracing?.TraceEvent(TraceEventType.Warning, 2000, "Connection::Monitor: Exeuction thread  for {0} is of state {1} but connection is of state {2} so setting connection stateo to closed.", ToString(), _startXS.State, State);
+                    Tracing?.TraceEvent(TraceEventType.Warning, 2000, "Connection::Monitor: Exeuction thread for {0} is of state {1} but connection is of state {2} so setting connection state to closed.", ToString(), _startXS.State, State);
                     State = ConnectionState.CLOSED;
                 }
 
@@ -202,15 +203,15 @@ namespace Chetch.Messaging
                 {
                     if (_startXS != null)
                     {
-                        if (_startXS.IsFinished)
+                        if (!_startXS.IsFinished)
                         {
-                            Tracing?.TraceEvent(TraceEventType.Information, 2000, "Connection::Monitor: Exeuction thread is of state closed but is not finished so terminating.");
+                            Tracing?.TraceEvent(TraceEventType.Information, 2000, "Connection::Monitor: Connection is of state closed but execution thread is not finished so terminating.");
                             ThreadExecutionManager.Terminate(_startXS.ID);
                         } else if(_startXS.Exceptions.Count > 0)
                         {
                             foreach (var ex in _startXS.Exceptions)
                             {
-                                Tracing?.TraceEvent(TraceEventType.Error, 2000, "Connection::Monitor: Exeuction thread is of state closed with exception {0}", ex.Message);
+                                Tracing?.TraceEvent(TraceEventType.Error, 2000, "Connection::Monitor: Connction is of state closed with exception {0}", ex.Message);
                             }
                         }
                     }
@@ -254,7 +255,7 @@ namespace Chetch.Messaging
                     //sometimes the 'Open' thread will dispose of this and then a managing thread will try and close
                     //resulting in an ObjectDisposedException... which we ignore since the important thing is the Stream
                     //has been closed
-                    Tracing?.TraceEvent(TraceEventType.Error, 2000, "Connection::Close: exception {0} for connectino ", e.Message, ToString());
+                    Tracing?.TraceEvent(TraceEventType.Error, 2000, "Connection::Close: exception {0} for connection ", e.Message, ToString());
                 }
             }
 
@@ -466,6 +467,8 @@ namespace Chetch.Messaging
             m.AddValue("ConnectionID", ID);
             m.AddValue("Name", Name);
             m.AddValue("State", State.ToString());
+            m.AddValue("ExecutionThreadState", _startXS != null ? _startXS.State.ToString() : "[null]");
+            m.AddValue("MonitorThreadState", _monitorXS != null ? _monitorXS.State.ToString() : "[null]");
             m.AddValue("ActivityTimeout", ActivityTimeout);
             m.AddValue("ConnectionTimeout", ConnectionTimeout);
             m.AddValue("RemainConnected", RemainConnected);

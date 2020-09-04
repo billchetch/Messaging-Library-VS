@@ -826,7 +826,8 @@ namespace Chetch.Messaging
                         Connection oldCnn = GetNamedConnection(message.Sender);
                         if (declined == null && oldCnn != null)
                         {
-                            declined = "Another connection is already owned by " + message.Sender;
+                            //TODO: we need to test here if the old connection is in some weird state e.g. CLOSED
+                            declined = String.Format("Another connection (state={0}) is already owned by {1}", oldCnn.State, message.Sender);
                         }
 
                         if (declined == null)
