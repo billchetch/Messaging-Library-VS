@@ -828,6 +828,7 @@ namespace Chetch.Messaging
                         {
                             //TODO: we need to test here if the old connection is in some weird state e.g. CLOSED
                             declined = String.Format("Another connection (state={0}) is already owned by {1}", oldCnn.State, message.Sender);
+                            if(!oldCnn.IsConnected)Tracing?.TraceEvent(TraceEventType.Error, 1000, "Connection request declined for {0} but existing connectio in state", message.Sender, oldCnn.State);
                         }
 
                         if (declined == null)
