@@ -13,12 +13,35 @@ namespace Chetch.Messaging
 {
     public class TCPServer : Server
     {
+        private static List<IPAddress> getIP4Addresses(String hostName)
+        {
+            List<IPAddress> ips = new List<IPAddress>();
+            IPHostEntry ipHostInfo = Dns.GetHostEntry(hostName);
+            foreach (IPAddress addr in ipHostInfo.AddressList)
+            {
+                if (addr.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    ips.Add(addr);
+                }
+            }
+            return ips;
+        }
+
+        public static List<IPAddress> LanIPs
+        {
+            get
+            {
+                return getIP4Addresses(Dns.GetHostName());
+            }
+        }
+
+
         public static IPAddress LanIP
         {
             get
             {
-                IPHostEntry ipHostInfo = Dns.GetHostEntry(Dns.GetHostName());
-                return  ipHostInfo.AddressList[1]; //use IPv4
+                List<IPAddress> addr = LanIPs;
+                return addr[0]; //use IPv4
             }
         }
 
@@ -26,10 +49,8 @@ namespace Chetch.Messaging
         {
             get
             {
-                IPHostEntry ipHostInfo = Dns.GetHostEntry("localhost");
-                return ipHostInfo.AddressList[1]; //use IPv4
-                //return IPAddress.Parse("127.0.0.1");
-            }
+                List<IPAddress> addr = getIP4Addresses("localhost");
+                return addr[0];            }
         }
 
         public static String LocalCS(int port)
@@ -94,8 +115,13 @@ namespace Chetch.Messaging
         public override void Start()
         {
             SecondaryConnections.Clear();
-            var cnn = CreatePrimaryConnection(LanIP.ToString());
-            SecondaryConnections.Add((ServerConnection)cnn);
+
+            List<IPAddress> ips = LanIPs;
+            foreach (IPAddress addr in ips)
+            {
+                var cnn = CreatePrimaryConnection(addr.ToString());
+                SecondaryConnections.Add((ServerConnection)cnn);
+            }
 
             base.Start();
 
