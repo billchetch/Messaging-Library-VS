@@ -13,34 +13,60 @@ namespace Chetch.Messaging
     {
         public String Sender { get; internal set; }
         private List<MessageType> _types = null;
+        private List<String> _requiredValues = null;
+
         private Action<MessageFilter, Message> _onMatched;
 
         public bool HasMatchedListener { get { return _onMatched != null; } }
 
-        public MessageFilter(String sender, MessageType type, Action<MessageFilter, Message> onMatched)
+        public MessageFilter(String sender, MessageType type, String requiredValues, Action<MessageFilter, Message> onMatched)
         {
             Sender = sender;
             _types = new List<MessageType>();
             _types.Add(type);
+            if (requiredValues != null)
+            {
+                String[] splitted = requiredValues.Split(',');
+                _requiredValues = new List<String>();
+                foreach(String s in splitted)
+                {
+                    _requiredValues.Add(s.Trim());
+                }
+            }
+
             _onMatched = onMatched;
         }
 
-        public MessageFilter(String sender, MessageType[] types, Action<MessageFilter, Message> onMatched)
+        public MessageFilter(String sender, MessageType[] types, String requiredValues, Action<MessageFilter, Message> onMatched)
         {
             Sender = sender;
             _types = new List<MessageType>(types);
+            if (requiredValues != null)
+            {
+                String[] splitted = requiredValues.Split(',');
+                _requiredValues = new List<String>();
+                foreach (String s in splitted)
+                {
+                    _requiredValues.Add(s.Trim());
+                }
+            }
             _onMatched = onMatched;
         }
-
-        public MessageFilter(MessageType[] types, Action<MessageFilter, Message> onMatched) : this(null, types, onMatched) { }
-
-        public MessageFilter(MessageType type, Action<MessageFilter, Message> onMatched) : this(null, type, onMatched) { }
 
         public MessageFilter(String sender, Action<MessageFilter, Message> onMatched)
         {
             Sender = sender;
             _onMatched = onMatched;
         }
+
+        public MessageFilter(String sender, MessageType[] types, Action<MessageFilter, Message> onMatched) : this(sender, types, null, onMatched) { }
+
+        public MessageFilter(MessageType[] types, Action<MessageFilter, Message> onMatched) : this(null, types, null, onMatched) { }
+
+        public MessageFilter(String sender, MessageType type, Action<MessageFilter, Message> onMatched) : this(sender, type, null, onMatched) { }
+
+        public MessageFilter(MessageType type, Action<MessageFilter, Message> onMatched) : this(null, type, null, onMatched) { }
+        
 
         public void HandleMessage(Connection cnn, Message message)
         {
@@ -63,6 +89,14 @@ namespace Chetch.Messaging
             {
                 matched = _types.Contains(message.Type);
                 if (!matched) return false;
+            }
+
+            if(_requiredValues != null && _requiredValues.Count > 0)
+            {
+                foreach(String f in _requiredValues)
+                {
+                    if (!message.HasValue(f)) return false;
+                }
             }
 
             return matched;
