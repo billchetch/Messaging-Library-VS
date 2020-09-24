@@ -13,41 +13,41 @@ namespace Chetch.Messaging
     {
         public String Sender { get; internal set; }
         private List<MessageType> _types = null;
-        private List<String> _requiredValues = null;
+        private List<String> _requiredKeys = null;
 
         private Action<MessageFilter, Message> _onMatched;
 
         public bool HasMatchedListener { get { return _onMatched != null; } }
 
-        public MessageFilter(String sender, MessageType type, String requiredValues, Action<MessageFilter, Message> onMatched)
+        public MessageFilter(String sender, MessageType type, String requiredKeys, Action<MessageFilter, Message> onMatched)
         {
             Sender = sender;
             _types = new List<MessageType>();
             _types.Add(type);
-            if (requiredValues != null)
+            if (requiredKeys != null)
             {
-                String[] splitted = requiredValues.Split(',');
-                _requiredValues = new List<String>();
+                String[] splitted = requiredKeys.Split(',');
+                _requiredKeys = new List<String>();
                 foreach(String s in splitted)
                 {
-                    _requiredValues.Add(s.Trim());
+                    _requiredKeys.Add(s.Trim());
                 }
             }
 
             _onMatched = onMatched;
         }
 
-        public MessageFilter(String sender, MessageType[] types, String requiredValues, Action<MessageFilter, Message> onMatched)
+        public MessageFilter(String sender, MessageType[] types, String requiredKeys, Action<MessageFilter, Message> onMatched)
         {
             Sender = sender;
             _types = new List<MessageType>(types);
-            if (requiredValues != null)
+            if (requiredKeys != null)
             {
-                String[] splitted = requiredValues.Split(',');
-                _requiredValues = new List<String>();
+                String[] splitted = requiredKeys.Split(',');
+                _requiredKeys = new List<String>();
                 foreach (String s in splitted)
                 {
-                    _requiredValues.Add(s.Trim());
+                    _requiredKeys.Add(s.Trim());
                 }
             }
             _onMatched = onMatched;
@@ -91,11 +91,11 @@ namespace Chetch.Messaging
                 if (!matched) return false;
             }
 
-            if(_requiredValues != null && _requiredValues.Count > 0)
+            if(_requiredKeys != null && _requiredKeys.Count > 0)
             {
-                foreach(String f in _requiredValues)
+                foreach(String k in _requiredKeys)
                 {
-                    if (!message.HasValue(f)) return false;
+                    if (!message.HasValue(k)) return false;
                 }
             }
 
