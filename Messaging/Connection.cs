@@ -844,10 +844,8 @@ namespace Chetch.Messaging
                 _subscriptionFilters.Add(messageFilter);
             }
 
-            if (messageFilter.HasMatchedListener)
-            {
-                HandleMessage += messageFilter.HandleMessage;
-            }
+            HandleMessage += messageFilter.HandleMessage;
+
             return Subscribe(messageFilter.Sender);
         }
 
