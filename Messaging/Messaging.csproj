@@ -54,6 +54,7 @@
     <Compile Include="Exceptions\MessageIOException.cs" />
     <Compile Include="Message.cs" />
     <Compile Include="MessageFilter.cs" />
+    <Compile Include="MessageFilters\AlertFilter.cs" />
     <Compile Include="MessageSchema.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="TCPClient.cs" />

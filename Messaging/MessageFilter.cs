@@ -6,6 +6,9 @@ using System.Threading.Tasks;
 
 namespace Chetch.Messaging
 {
+
+    public delegate void MatchedHandler(MessageFilter messageFilter, Message message);
+
     /// <summary>
     /// Set filter criteria, provide an on Matched handler and then assign HandleMessage to a Client.HandleMessage event to receive filtered messages
     /// </summary>
@@ -13,59 +16,47 @@ namespace Chetch.Messaging
     {
         public String Sender { get; internal set; }
         private List<MessageType> _types = null;
-        private List<String> _requiredKeys = null;
+        private List<String> _requiredKeys = new List<string>();
+        private List<Object> _requiredVals = new List<object>();
 
-        private Action<MessageFilter, Message> _onMatched;
-
-        public bool HasMatchedListener { get { return _onMatched != null; } }
-
-        public MessageFilter(String sender, MessageType type, String requiredKeys, Action<MessageFilter, Message> onMatched)
-        {
-            Sender = sender;
-            _types = new List<MessageType>();
-            _types.Add(type);
-            if (requiredKeys != null)
-            {
-                String[] splitted = requiredKeys.Split(',');
-                _requiredKeys = new List<String>();
-                foreach(String s in splitted)
-                {
-                    _requiredKeys.Add(s.Trim());
-                }
-            }
-
-            _onMatched = onMatched;
-        }
-
-        public MessageFilter(String sender, MessageType[] types, String requiredKeys, Action<MessageFilter, Message> onMatched)
+        public event MatchedHandler HandleMatched;
+        
+        public MessageFilter(String sender, MessageType[] types, String requiredKeys, params Object[] requiredVals)
         {
             Sender = sender;
             _types = new List<MessageType>(types);
             if (requiredKeys != null)
             {
                 String[] splitted = requiredKeys.Split(',');
-                _requiredKeys = new List<String>();
                 foreach (String s in splitted)
                 {
                     _requiredKeys.Add(s.Trim());
                 }
             }
-            _onMatched = onMatched;
+
+            if(requiredVals != null && requiredVals.Length > 0)
+            {
+                _requiredVals.AddRange(requiredVals);
+            }
         }
 
-        public MessageFilter(String sender, Action<MessageFilter, Message> onMatched)
+        public MessageFilter(String sender, MessageType type, String requiredKeys, params Object[] requiredVals) :
+            this(sender, new MessageType[] { type }, requiredKeys, requiredVals)
+        { }
+
+
+        public MessageFilter(String sender)
         {
             Sender = sender;
-            _onMatched = onMatched;
         }
 
-        public MessageFilter(String sender, MessageType[] types, Action<MessageFilter, Message> onMatched) : this(sender, types, null, onMatched) { }
+        public MessageFilter(String sender, MessageType[] types) : this(sender, types, null) { }
 
-        public MessageFilter(MessageType[] types, Action<MessageFilter, Message> onMatched) : this(null, types, null, onMatched) { }
+        public MessageFilter(MessageType[] types) : this(null, types, null) { }
 
-        public MessageFilter(String sender, MessageType type, Action<MessageFilter, Message> onMatched) : this(sender, type, null, onMatched) { }
+        public MessageFilter(String sender, MessageType type) : this(sender, type, null) { }
 
-        public MessageFilter(MessageType type, Action<MessageFilter, Message> onMatched) : this(null, type, null, onMatched) { }
+        public MessageFilter(MessageType type) : this(null, type, null) { }
         
 
         public void HandleMessage(Connection cnn, Message message)
@@ -91,11 +82,21 @@ namespace Chetch.Messaging
                 if (!matched) return false;
             }
 
-            if(_requiredKeys != null && _requiredKeys.Count > 0)
+            if(_requiredKeys.Count > 0)
             {
                 foreach(String k in _requiredKeys)
                 {
                     if (!message.HasValue(k)) return false;
+                }
+            }
+
+            if (_requiredVals.Count == _requiredKeys.Count)
+            {
+                for(int i = 0; i < _requiredVals.Count; i++)
+                {
+                    String k = _requiredKeys[i];
+                    Object v = _requiredVals[i];
+                    if (message.GetValue(k) != v) return false;
                 }
             }
 
@@ -104,7 +105,7 @@ namespace Chetch.Messaging
 
         virtual protected void OnMatched(Message message)
         {
-            _onMatched?.Invoke(this, message);
+            HandleMatched?.Invoke(this, message);
         }
     }
 }
