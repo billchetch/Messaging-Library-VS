@@ -878,7 +878,7 @@ namespace Chetch.Messaging
                     {
                         if (f.Sender.Equals(client.Trim()))
                         {
-                            if(f.HasMatchedListener)HandleMessage -= f.HandleMessage;
+                            HandleMessage -= f.HandleMessage;
                             toRemove.Add(f);
                         }
                     }
