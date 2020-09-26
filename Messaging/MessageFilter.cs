@@ -95,8 +95,12 @@ namespace Chetch.Messaging
                 for(int i = 0; i < _requiredVals.Count; i++)
                 {
                     String k = _requiredKeys[i];
-                    Object v = _requiredVals[i];
-                    if (message.GetValue(k) != v) return false;
+                    Object rv = _requiredVals[i];
+                    Object v = message.GetValue(k);
+                    if ((v == null && rv != null) || (v != null && !v.Equals(rv)))
+                    {
+                        return false;
+                    }
                 }
             }
 
