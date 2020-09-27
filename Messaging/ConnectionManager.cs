@@ -11,6 +11,13 @@ using Chetch.Application;
 
 namespace Chetch.Messaging
 {
+    public enum ErrorCode
+    {
+        NONE,
+        CLIENT_NOT_CONNECCTED,
+        ILLEGAL_MESSAGE_TYPE
+    }
+
     abstract public class ConnectionManager
     {
         protected class ConnectionRequest
@@ -770,7 +777,7 @@ namespace Chetch.Messaging
                 switch (message.Type)
                 {
                     case MessageType.CONNECTION_REQUEST:
-                        response = CreateErrorMessage(String.Format("Server {0} cannot relay messages of type {1}", ID, message.Type), cnn);
+                        response = CreateErrorMessage(String.Format("Server {0} cannot relay messages of type {1}", ID, message.Type), ErrorCode.ILLEGAL_MESSAGE_TYPE, cnn);
                         cnn.SendMessage(response);
                         break;
 
@@ -788,7 +795,8 @@ namespace Chetch.Messaging
                             }
                             else
                             {
-                                response = CreateErrorMessage(String.Format("Server {0} cannot relay message ({1}) to {2} as it is not connected.", ID, message.Type, tgt), cnn);
+                                response = CreateErrorMessage(String.Format("Server {0} cannot relay message ({1}) to {2} as it is not connected.", ID, message.Type, tgt), ErrorCode.CLIENT_NOT_CONNECTED, cnn);
+                                response.AddValue("IntendedTarget", tgt);
                                 cnn.SendMessage(response);
                             }
                         }
@@ -1165,8 +1173,14 @@ namespace Chetch.Messaging
 
         virtual protected Message CreateErrorMessage(String errorMsg, Connection cnn)
         {
+            return CreateErrorMessage(errorMsg, ErrorCode.NONE, cnn);
+        }
+
+        virtual protected Message CreateErrorMessage(String errorMsg, ErrorCode errorCode, Connection cnn)
+        {
             var message = new Message();
             message.Type = MessageType.ERROR;
+            message.SubType = (int)errorCode;
             message.Value = errorMsg;
             return message;
         }
