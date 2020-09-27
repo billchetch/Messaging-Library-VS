@@ -14,7 +14,7 @@ namespace Chetch.Messaging
     public enum ErrorCode
     {
         NONE,
-        CLIENT_NOT_CONNECCTED,
+        CLIENT_NOT_CONNECTED,
         ILLEGAL_MESSAGE_TYPE
     }
 
