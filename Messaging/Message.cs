@@ -67,7 +67,7 @@ namespace Chetch.Messaging
     [Serializable]
     public class Message
     {
-        const String JSON_DATETIME_FORMAT = "yyyy'-'mm'-'dd HH':'mm':'ss zzzz";
+        public const String JSON_DATETIME_FORMAT = "yyyy'-'MM'-'dd HH':'mm':'ss zzzz";
 
         public String ID;
         public String Target; //to help routing to the correct place at the receive end
