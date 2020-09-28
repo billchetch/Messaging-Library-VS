@@ -67,6 +67,8 @@ namespace Chetch.Messaging
     [Serializable]
     public class Message
     {
+        const String JSON_DATETIME_FORMAT = "yyyy'-'mm'-'dd HH':'mm':'ss zzzz";
+
         public String ID;
         public String Target; //to help routing to the correct place at the receive end
         public String ResponseID; //normally the ID of the message that was sent requesting a response (e.g. Ping and Ping Response)
@@ -245,6 +247,20 @@ namespace Chetch.Messaging
             return (T)Enum.Parse(typeof(T), v.ToString());
         }
 
+        public DateTime GetDateTime(String key)
+        {
+            String dts = GetString(key);
+            if (dts == null || dts == String.Empty)
+            {
+                return default(DateTime);
+            }
+            else
+            {
+                return DateTime.Parse(dts, System.Globalization.CultureInfo.InvariantCulture);
+            }
+            
+        }
+
         public List<T> GetList<T>(String key)
         {
             Object v = GetValue(key);
@@ -346,7 +362,14 @@ namespace Chetch.Messaging
             vals.Add("Signature", Signature);
             foreach (var mv in Values)
             {
-                vals.Add(mv.Key, mv.Value);
+                if (mv.Value is DateTime)
+                {
+                    vals.Add(mv.Key, ((DateTime)mv.Value).ToString(JSON_DATETIME_FORMAT));
+                }
+                else
+                {
+                    vals.Add(mv.Key, mv.Value);
+                }
             }
 
             var jsonSerializer = new System.Web.Script.Serialization.JavaScriptSerializer();
