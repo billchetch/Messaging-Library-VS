@@ -958,7 +958,24 @@ namespace Chetch.Messaging
             var msg = new Message();
             msg.Type = MessageType.COMMAND;
             msg.Value = command;
-            msg.AddValue("Arguments", args);
+            //sanitise args
+            List<Object> args2send = null;
+            if (args != null)
+            {
+                args2send = new List<Object>();
+                foreach(var arg in args)
+                {
+                    if (arg is String && arg != null)
+                    {
+                        args2send.Add(((String)arg).Trim());
+                    } else
+                    {
+                        args2send.Add(arg);
+                    }
+                }
+            }
+
+            msg.AddValue("Arguments", args2send);
             SendMessage(target, msg);
 
             return msg;
