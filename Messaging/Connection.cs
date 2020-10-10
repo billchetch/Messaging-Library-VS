@@ -965,6 +965,7 @@ namespace Chetch.Messaging
                 args2send = new List<Object>();
                 foreach(var arg in args)
                 {
+                    if (arg == null || arg.ToString() == String.Empty) continue;
                     if (arg is String && arg != null)
                     {
                         args2send.Add(((String)arg).Trim());
