@@ -12,6 +12,16 @@ namespace Chetch.Messaging
     /// </summary>
     public class MessageSchema
     {
+        static public T CreateSchema<T>(MessageType messageType, String target) where T : MessageSchema, new()
+        {
+            Message msg = new Message(messageType);
+            msg.Target = target;
+            T t = new T();
+            t.Message = msg;
+
+            return t;
+        }
+
         public Message Message { get; set; }
 
 
