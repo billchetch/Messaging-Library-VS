@@ -104,6 +104,13 @@ namespace Chetch.Messaging
             Type = type;
         }
 
+        public Message(MessageType type, String target)
+        {
+            ID = CreateID();
+            Type = type;
+            Target = target;
+        }
+
         public Message(String message, int subType = 0, MessageType type = MessageType.NOT_SET)
         {
             ID = CreateID();
