@@ -837,8 +837,8 @@ namespace Chetch.Messaging
                             //so this is a request from a client for which there is already an exising connection
                             if (message.Signature != null && Connection.IsValidSignature(oldCnn.AuthToken, message))
                             {
-                                oldCnn.Close();
-                                System.Threading.Thread.Sleep(100);
+                                newCnn = oldCnn;
+                                Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Reusing old connection for request {0}", message.ToString());
                             }
                             else
                             {
@@ -874,31 +874,38 @@ namespace Chetch.Messaging
                         }
                         else
                         {
-                            ConnectionRequest cnnreq = AddRequest(message, newCnn);
-                            Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection for request {0} granted", cnnreq.ToString());
-                            newCnn.Open();
-
-                            //now we wait until the we have a successful opening
-                            do
+                            if (!newCnn.IsConnected)
                             {
-                                System.Threading.Thread.Sleep(100);
-                            } while (!cnnreq.Succeeded && !cnnreq.Failed);
+                                ConnectionRequest cnnreq = AddRequest(message, newCnn);
+                                Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection for request {0} granted", cnnreq.ToString());
+                                newCnn.Open();
 
-                            response = CreateRequestResponse(message, cnnreq.Succeeded ? newCnn : null, null);
-                            if (cnnreq.Failed)
-                            {
-                                response.AddValue("Declined", "Connection request failed");
-                                Tracing?.TraceEvent(TraceEventType.Warning, 1000, "Connection request {0} failed", cnnreq.ToString());
+                                //now we wait until the we have a successful opening
+                                do
+                                {
+                                    System.Threading.Thread.Sleep(100);
+                                } while (!cnnreq.Succeeded && !cnnreq.Failed);
+
+                                response = CreateRequestResponse(message, cnnreq.Succeeded ? newCnn : null, null);
+                                if (cnnreq.Failed)
+                                {
+                                    response.AddValue("Declined", "Connection request failed");
+                                    Tracing?.TraceEvent(TraceEventType.Warning, 1000, "Connection request {0} failed", cnnreq.ToString());
+                                }
+                                else
+                                {
+                                    Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection for request {0} opened", cnnreq.ToString());
+                                }
+
+                                //Finally we can remove the connection request
+                                ConnectionRequests.Remove(cnnreq.ID);
                             } else
                             {
-                                Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection for request {0} opened", cnnreq.ToString());
+                                response = CreateRequestResponse(message, newCnn, null);
                             }
 
                             cnn.SendMessage(response);
-                            Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Sent response for request {0}", cnnreq.ToString());
-
-                            //Finally we can remove the connection request
-                            ConnectionRequests.Remove(cnnreq.ID);
+                            Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Sent response for connection request {0}", message.ToString());
                         }
                     }
                     else
