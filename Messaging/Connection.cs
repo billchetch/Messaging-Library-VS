@@ -28,7 +28,7 @@ namespace Chetch.Messaging
             {
                 throw new Exception("Cannot creat signature without a Sender");
             }
-            return sender + "-" + authToken;
+            return authToken + "-" + sender;
         }
 
         static public bool IsValidSignature(String authToken, Message message)
