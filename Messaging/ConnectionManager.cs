@@ -1534,6 +1534,10 @@ namespace Chetch.Messaging
                             Connections[newCnn.ID] = newCnn; //Here we add the connection to the list of connections
                             Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Opening connection for request {0}", cnnreq.ToString());
                             newCnn.Open();
+                        } else
+                        {
+                            Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection for request {0} is already open so we have immediate success", cnnreq.ToString());
+                            cnnreq.Succeeded = true;
                         }
                     }
                     break;
