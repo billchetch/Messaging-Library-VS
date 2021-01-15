@@ -1524,17 +1524,16 @@ namespace Chetch.Messaging
                             newCnn = CreateConnection(message, cnn);
                         }
 
-                        if (newCnn != null)
+                        if (newCnn == null) 
+                        {
+                            cnnreq.Failed = true;
+                        } else if(!newCnn.IsConnected)
                         {
                             newCnn.Name = cnnreq.Name;
                             cnnreq.Connection = newCnn;
                             Connections[newCnn.ID] = newCnn; //Here we add the connection to the list of connections
                             Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Opening connection for request {0}", cnnreq.ToString());
                             newCnn.Open();
-                        }
-                        else
-                        {
-                            cnnreq.Failed = true;
                         }
                     }
                     break;
