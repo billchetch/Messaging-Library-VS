@@ -834,12 +834,21 @@ namespace Chetch.Messaging
                         Connection oldCnn = GetNamedConnection(message.Sender);
                         if (declined == null && oldCnn != null)
                         {
-                            //TODO: we need to test here if the old connection is in some weird state e.g. CLOSED
-                            declined = String.Format("Another connection (state={0}) is already owned by {1}", oldCnn.State, message.Sender);
-                            if(!oldCnn.IsConnected)Tracing?.TraceEvent(TraceEventType.Error, 1000, "Connection request declined for {0} but existing connectio in state", message.Sender, oldCnn.State);
+                            //so this is a request from a client for which there is already an exising connection
+                            if (message.Signature != null && Connection.IsValidSignature(oldCnn.AuthToken, message))
+                            {
+                                oldCnn.Close();
+                                System.Threading.Thread.Sleep(100);
+                            }
+                            else
+                            {
+                                //TODO: we need to test here if the old connection is in some weird state e.g. CLOSED
+                                declined = String.Format("Another connection (state={0}) is already owned by {1}", oldCnn.State, message.Sender);
+                                if (!oldCnn.IsConnected) Tracing?.TraceEvent(TraceEventType.Error, 1000, "Connection request declined for {0} but existing connectio in state", message.Sender, oldCnn.State);
+                            }
                         }
 
-                        if (declined == null)
+                        if (declined == null && newCnn == null)
                         {
                             newCnn = CreateConnection(message, cnn);
                             if (newCnn != null)
@@ -1584,9 +1593,13 @@ namespace Chetch.Messaging
             var cnnreq = AddRequest(CreateConnectionRequest(name));
             cnnreq.Name = name;
             cnnreq.Connection = cnn2reuse;
+            if(cnn2reuse != null)
+            {
+                //sign the request message using the old connection auth token
+                cnnreq.Request.Signature = Connection.CreateSignature(cnn2reuse.AuthToken, cnnreq.Request.Sender);
+            }
             ConnectionRequestQueue.Enqueue(cnnreq);
             Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Requesting connection @ {0} using request {1}", connectionString, cnnreq.ToString());
-
 
             if (ConnectionRequestQueue.Peek() == cnnreq)
             {

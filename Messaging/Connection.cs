@@ -18,6 +18,25 @@ namespace Chetch.Messaging
 
     abstract public class Connection
     {
+        static public String CreateSignature(String authToken, String sender)
+        {
+            if (String.IsNullOrEmpty(authToken))
+            {
+                throw new Exception("Cannot creat signature without an AuthToken");
+            }
+            if (String.IsNullOrEmpty(sender))
+            {
+                throw new Exception("Cannot creat signature without a Sender");
+            }
+            return sender + "-" + authToken;
+        }
+
+        static public bool IsValidSignature(String authToken, Message message)
+        {
+            var vsig = CreateSignature(authToken, message.Sender);
+            return vsig == message.Signature;
+        }
+
         public enum ConnectionState
         {
             NOT_SET,
@@ -361,17 +380,12 @@ namespace Chetch.Messaging
 
         virtual protected String CreateSignature(String sender = null)
         {
-            if(AuthToken == null || AuthToken.Length == 0)
-            {
-                throw new Exception("Cannot creat signature without AuthToken");
-            }
-            return (sender == null ? Name : sender) + "-" + AuthToken;
+            return CreateSignature(AuthToken, String.IsNullOrEmpty(sender) ? Name : sender);
         }
 
         virtual protected bool IsValidSignature(Message message)
         {
-            var vsig = CreateSignature(message.Sender);
-            return vsig == message.Signature;
+            return IsValidSignature(AuthToken, message);
         }
 
         protected void ReceiveMessage()
