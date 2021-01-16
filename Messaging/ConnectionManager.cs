@@ -837,8 +837,8 @@ namespace Chetch.Messaging
                             //so this is a request from a client for which there is already an exising connection
                             if (message.Signature != null && Connection.IsValidSignature(oldCnn.AuthToken, message))
                             {
-                                newCnn = oldCnn;
-                                Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Reusing old connection for request {0}", message.ToString());
+                                oldCnn.Close();
+                                Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Closing old connection for request {0}", message.ToString());
                             }
                             else
                             {
@@ -848,7 +848,7 @@ namespace Chetch.Messaging
                             }
                         }
 
-                        if (declined == null && newCnn == null)
+                        if (declined == null)
                         {
                             newCnn = CreateConnection(message, cnn);
                             if (newCnn != null)
@@ -874,36 +874,30 @@ namespace Chetch.Messaging
                         }
                         else
                         {
-                            if (!newCnn.IsConnected)
+                            //by here the connection request is granted
+                            ConnectionRequest cnnreq = AddRequest(message, newCnn);
+                            Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection for request {0} granted", cnnreq.ToString());
+                            newCnn.Open();
+
+                            //now we wait until the we have a successful opening
+                            do
                             {
-                                ConnectionRequest cnnreq = AddRequest(message, newCnn);
-                                Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection for request {0} granted", cnnreq.ToString());
-                                newCnn.Open();
+                                System.Threading.Thread.Sleep(100);
+                            } while (!cnnreq.Succeeded && !cnnreq.Failed);
 
-                                //now we wait until the we have a successful opening
-                                do
-                                {
-                                    System.Threading.Thread.Sleep(100);
-                                } while (!cnnreq.Succeeded && !cnnreq.Failed);
-
-                                response = CreateRequestResponse(message, cnnreq.Succeeded ? newCnn : null, null);
-                                if (cnnreq.Failed)
-                                {
-                                    response.AddValue("Declined", "Connection request failed");
-                                    Tracing?.TraceEvent(TraceEventType.Warning, 1000, "Connection request {0} failed", cnnreq.ToString());
-                                }
-                                else
-                                {
-                                    Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection for request {0} opened", cnnreq.ToString());
-                                }
-
-                                //Finally we can remove the connection request
-                                ConnectionRequests.Remove(cnnreq.ID);
-                            } else
+                            response = CreateRequestResponse(message, cnnreq.Succeeded ? newCnn : null, null);
+                            if (cnnreq.Failed)
                             {
-                                response = CreateRequestResponse(message, newCnn, null);
+                                response.AddValue("Declined", "Connection request failed");
+                                Tracing?.TraceEvent(TraceEventType.Warning, 1000, "Connection request {0} failed", cnnreq.ToString());
+                            }
+                            else
+                            {
+                                Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection for request {0} opened", cnnreq.ToString());
                             }
 
+                            //Finally we can remove the connection request
+                            ConnectionRequests.Remove(cnnreq.ID);
                             cnn.SendMessage(response);
                             Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Sent response for connection request {0}", message.ToString());
                         }
@@ -1534,10 +1528,6 @@ namespace Chetch.Messaging
                             Connections[newCnn.ID] = newCnn; //Here we add the connection to the list of connections
                             Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Opening connection for request {0}", cnnreq.ToString());
                             newCnn.Open();
-                        } else
-                        {
-                            Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Connection for request {0} is already open so we have immediate success", cnnreq.ToString());
-                            cnnreq.Succeeded = true;
                         }
                     }
                     break;
