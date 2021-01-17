@@ -1502,22 +1502,10 @@ namespace Chetch.Messaging
                             return;
                         }
 
-                        //server has granted connection so we record server ID for primary connection and 
-                        //re -use or try and make a new connection here
+                        //server has granted connection so we record server ID and create a new client connection
                         cnn.ServerID = message.Sender;
-                        Connection newCnn = null;
-                        if(cnnreq.Connection != null)
-                        {
-                            newCnn = cnnreq.Connection;
-                            if (message.HasValue("AuthToken"))
-                            {
-                                newCnn.AuthToken = message.GetString("AuthToken");
-                            }
-                        } else
-                        {
-                            newCnn = CreateConnection(message, cnn);
-                        }
-
+                        Connection newCnn = newCnn = CreateConnection(message, cnn);
+                        
                         if (newCnn == null) 
                         {
                             cnnreq.Failed = true;
@@ -1571,7 +1559,7 @@ namespace Chetch.Messaging
             }
         }
 
-        virtual public ClientConnection Connect(String connectionString, String name, int timeout = -1, Connection oldCnn = null)
+        virtual public ClientConnection Connect(String connectionString, String name, int timeout = -1, String authToken = null)
         {
             if (Connections.Count == MaxConnections)
             {
@@ -1587,7 +1575,7 @@ namespace Chetch.Messaging
                     return cnn;
                 } else
                 {
-                    throw new Exception(String.Format("Cannot connect {0} because a connection already exists of state {1}", cnn.Name, cnn.State);
+                    throw new Exception(String.Format("Cannot connect {0} because a connection already exists of state {1}", cnn.Name, cnn.State));
                 }
             }
 
@@ -1605,10 +1593,10 @@ namespace Chetch.Messaging
 
             var cnnreq = AddRequest(CreateConnectionRequest(name));
             cnnreq.Name = name;
-            if(oldCnn != null)
+            if(authToken != null)
             {
                 //sign the request message using the old connection auth token
-                cnnreq.Request.Signature = Connection.CreateSignature(oldCnn.AuthToken, cnnreq.Request.Sender);
+                cnnreq.Request.Signature = Connection.CreateSignature(authToken, cnnreq.Request.Sender);
             }
             ConnectionRequestQueue.Enqueue(cnnreq);
             Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Requesting connection @ {0} using request {1}", connectionString, cnnreq.ToString());
@@ -1679,22 +1667,14 @@ namespace Chetch.Messaging
             return (ClientConnection)cnnreq.Connection;
         }
 
+        //Reconnecting involves
         virtual public void Reconnect(Connection cnn, int timeout = -1)
         {
             if (cnn.IsConnected)
             {
                 throw new Exception(String.Format("Cannot reconnect {0} because it is already connected", cnn.ToString()));
             }
-
-            if (cnn.State != Connection.ConnectionState.NOT_SET)
-            {
-                cnn.Reset();
-            }
-
-            if (cnn.State != Connection.ConnectionState.NOT_SET)
-            {
-                throw new Exception(String.Format("Cannot reconnect {0} because it is in state {1}", cnn.ToString(), cnn.State));
-            }
+            
 
             String connectionString = null;
             foreach(var server in Servers.Values)
@@ -1712,7 +1692,7 @@ namespace Chetch.Messaging
             }
 
             //here the connection is ready to re-connect and we have the original connection string
-            Connect(connectionString, cnn.Name, timeout, cnn);
+            Connect(connectionString, cnn.Name, timeout, cnn.AuthToken);
         }
 
         private void NextKeepAlive(int interval, bool createTimer = false)
