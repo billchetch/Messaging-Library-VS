@@ -1571,11 +1571,24 @@ namespace Chetch.Messaging
             }
         }
 
-        virtual public ClientConnection Connect(String connectionString, String name, int timeout = -1, Connection cnn2reuse = null)
+        virtual public ClientConnection Connect(String connectionString, String name, int timeout = -1, Connection oldCnn = null)
         {
             if (Connections.Count == MaxConnections)
             {
                 throw new Exception("Cannot create more than " + MaxConnections + " connections");
+            }
+
+            //look to see if we can directly use an existing connection
+            ClientConnection cnn = (ClientConnection)GetNamedConnection(name);
+            if(cnn != null)
+            {
+                if (cnn.IsConnected)
+                {
+                    return cnn;
+                } else
+                {
+                    throw new Exception(String.Format("Cannot connect {0} because a connection already exists of state {1}", cnn.Name, cnn.State);
+                }
             }
 
             String serverKey = connectionString;
@@ -1592,11 +1605,10 @@ namespace Chetch.Messaging
 
             var cnnreq = AddRequest(CreateConnectionRequest(name));
             cnnreq.Name = name;
-            cnnreq.Connection = cnn2reuse;
-            if(cnn2reuse != null)
+            if(oldCnn != null)
             {
                 //sign the request message using the old connection auth token
-                cnnreq.Request.Signature = Connection.CreateSignature(cnn2reuse.AuthToken, cnnreq.Request.Sender);
+                cnnreq.Request.Signature = Connection.CreateSignature(oldCnn.AuthToken, cnnreq.Request.Sender);
             }
             ConnectionRequestQueue.Enqueue(cnnreq);
             Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Requesting connection @ {0} using request {1}", connectionString, cnnreq.ToString());
