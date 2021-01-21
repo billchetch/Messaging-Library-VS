@@ -835,19 +835,21 @@ namespace Chetch.Messaging
                         if (declined == null && oldCnn != null)
                         {
                             //so this is a request from a client for which there is already an exising connection
-                            if (message.Signature != null && Connection.IsValidSignature(oldCnn.AuthToken, message))
+                            if(message.Signature == null)
                             {
+                                declined = String.Format("Another connection (state={0}) is already owned by {1}: no signature provided", oldCnn.State, message.Sender);
+                            }
+                            else if(!Connection.IsValidSignature(oldCnn.AuthToken, message))
+                            {
+                                declined = String.Format("Another connection (state={0}) is already owned by {1}: signature {2} is not valid", oldCnn.State, message.Sender, message.Signature);
+                            } else 
+                            { 
                                 oldCnn.Close();
                                 Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Closing old connection for request {0}", message.ToString());
                             }
-                            else
-                            {
-                                //TODO: we need to test here if the old connection is in some weird state e.g. CLOSED
-                                declined = String.Format("Another connection (state={0}) is already owned by {1}", oldCnn.State, message.Sender);
-                                if (!oldCnn.IsConnected) Tracing?.TraceEvent(TraceEventType.Error, 1000, "Connection request declined for {0} but existing connectio in state", message.Sender, oldCnn.State);
-                            }
+                            if (declined != null && !oldCnn.IsConnected) Tracing?.TraceEvent(TraceEventType.Error, 1000, "Connection request declined for {0} but existing connectio in state", message.Sender, oldCnn.State);
                         }
-
+                    
                         if (declined == null)
                         {
                             newCnn = CreateConnection(message, cnn);
