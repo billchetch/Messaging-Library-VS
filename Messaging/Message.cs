@@ -45,7 +45,7 @@ namespace Chetch.Messaging
 
     public enum MessageEncoding
     {
-        XML,
+        XML = 1,
         QUERY_STRING,
         POSITONAL,
         BYTES_ARRAY,

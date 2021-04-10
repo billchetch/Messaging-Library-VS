@@ -52,6 +52,7 @@
     <Compile Include="ConnectionManager.cs" />
     <Compile Include="Exceptions\MessageHandlingException.cs" />
     <Compile Include="Exceptions\MessageIOException.cs" />
+    <Compile Include="Frame.cs" />
     <Compile Include="Message.cs" />
     <Compile Include="MessageFilter.cs" />
     <Compile Include="MessageSchema.cs" />
