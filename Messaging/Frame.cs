@@ -34,16 +34,16 @@ namespace Chetch.Messaging
 
         public class FrameDimensions
         {
-            public int Schema { get; internal set; }
-            public int Encoding { get; internal set; }
+            public int Schema { get; internal set; } //nb this is the dimension NOT the schema value
+            public int Encoding { get; internal set; } //nb this is the dimension NOT the encoding value
             public int PayloadSize { get; internal set; }
             public int Checksum { get; internal set; }
             public int Payload { get; set; } = -1;
 
             public FrameDimensions(FrameSchema schema)
             {
-                Schema = 1;
-                Encoding = 1;
+                Schema = 1; //nb this is the dimension NOT the schema value
+                Encoding = 1; //nb this is the dimension NOT the encoding value
                 switch (schema)
                 {
                     case FrameSchema.SMALL_NO_CHECKSUM:
@@ -177,6 +177,11 @@ namespace Chetch.Messaging
             Dimensions = new FrameDimensions(schema);
         }
 
+        public Frame(FrameSchema schema, MessageEncoding encoding) : this(schema)
+        {
+            Encoding = encoding;
+        }
+
         private void setByteAt(byte b, int idx)
         {
             if(idx < _bytes.Count)
@@ -218,6 +223,16 @@ namespace Chetch.Messaging
             Complete = Dimensions.Payload > 0 && _addPosition == Dimensions.Size;
 
             return Complete;
+        }
+
+        public bool Add(List<byte> bytes)
+        {
+            bool complete = false;
+            foreach(byte b in bytes)
+            {
+                complete = Add(b);
+            }
+            return complete;
         }
 
         public void Reset()
@@ -264,7 +279,7 @@ namespace Chetch.Messaging
             }
         }
 
-        public byte[] GetBytes(bool addChecksum = false)
+        public List<byte> GetBytes(bool addChecksum = true)
         {
             if (Dimensions.Payload <= 0) throw new FrameException(FrameError.NO_PAYLOAD);
 
@@ -279,7 +294,7 @@ namespace Chetch.Messaging
                 }
             }
 
-            return _bytes.ToArray(); ;
+            return _bytes;
         }
 
 
