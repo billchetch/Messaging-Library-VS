@@ -1550,11 +1550,11 @@ namespace Chetch.Messaging
             return Servers.ContainsKey(serverName) ? Servers[serverName] : null;
         }
 
-        virtual public ClientConnection Connect(String name, int timeout = -1)
+        virtual public ClientConnection Connect(String name, int timeout = -1, String authToken = null)
         {
             if (Servers.ContainsKey("default"))
             {
-                return Connect("default", name, timeout);
+                return Connect("default", name, timeout, authToken);
             } else
             {
                 throw new Exception("ClientManager::Connect: No default server set");
