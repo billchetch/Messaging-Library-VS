@@ -847,7 +847,7 @@ namespace Chetch.Messaging
                                 oldCnn.Close();
                                 Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Closing old connection for request {0}", message.ToString());
                             }
-                            if (declined != null && !oldCnn.IsConnected) Tracing?.TraceEvent(TraceEventType.Error, 1000, "Connection request declined for {0} but existing connectio in state", message.Sender, oldCnn.State);
+                            if (declined != null && !oldCnn.IsConnected) Tracing?.TraceEvent(TraceEventType.Error, 1000, "Connection request declined for {0} (reason: {1}) but existing connectio in state {2}", message.Sender, declined, oldCnn.State);
                         }
                     
                         if (declined == null)
