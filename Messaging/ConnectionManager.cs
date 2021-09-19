@@ -841,7 +841,8 @@ namespace Chetch.Messaging
                             }
                             else if(!Connection.IsValidSignature(oldCnn.AuthToken, message))
                             {
-                                declined = String.Format("Another connection (state={0}) is already owned by {1}: signature {2} is not valid", oldCnn.State, message.Sender, message.Signature);
+
+                                declined = String.Format("Another connection (state={0}, AuthToken={1}) is already owned by {2}: signature {3} is not valid", oldCnn.State, oldCnn.AuthToken, message.Sender, message.Signature);
                             } else 
                             { 
                                 oldCnn.Close();
