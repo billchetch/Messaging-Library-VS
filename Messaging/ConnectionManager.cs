@@ -835,19 +835,23 @@ namespace Chetch.Messaging
                         if (declined == null && oldCnn != null)
                         {
                             //so this is a request from a client for which there is already an exising connection
-                            if(message.Signature == null)
+                            if (message.Signature == null)
                             {
                                 declined = String.Format("Another connection (state={0}) is already owned by {1}: no signature provided", oldCnn.State, message.Sender);
                             }
-                            else if(!Connection.IsValidSignature(oldCnn.AuthToken, message))
+                            else if (!Connection.IsValidSignature(oldCnn.AuthToken, message))
                             {
-
                                 declined = String.Format("Another connection (state={0}, AuthToken={1}) is already owned by {2}: signature {3} is not valid", oldCnn.State, oldCnn.AuthToken, message.Sender, message.Signature);
-                            } else 
-                            { 
-                                oldCnn.Close();
-                                Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Closing old connection for request {0}", message.ToString());
                             }
+                            else
+                            {
+                                Tracing?.TraceEvent(TraceEventType.Verbose, 1000, "Closing and removing old connection for request {0}...", message.ToString());
+                                //we remove immediately he old connection so there is no risk that a new connection request fails because the closing
+                                //procedure took so long that it didn't remove he old connection prior to a new connection with the same name attempting to reconnect
+                                Connections.Remove(oldCnn.ID); 
+                                oldCnn.Close();
+                            }
+
                             if (declined != null && !oldCnn.IsConnected)
                             {
                                 Tracing?.TraceEvent(TraceEventType.Error, 1000, "Connection request declined for {0} (reason: {1}) but existing connectio in state {2}", message.Sender, declined, oldCnn.State);
