@@ -155,7 +155,7 @@ namespace Chetch.Messaging
                 _bytes.Clear();
                 _bytes.Add(schema);
                 _bytes.Add(encoding);
-                byte[] payloadSize = Chetch.Utilities.Convert.ToBytes(value.Length, Dimensions.PayloadSize);
+                byte[] payloadSize = Utilities.Convert.ToBytes(value.Length, Dimensions.PayloadSize);
                 _bytes.AddRange(payloadSize);
                 for (int i = 0; i < value.Length; i++)
                 {
