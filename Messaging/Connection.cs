@@ -422,7 +422,7 @@ namespace Chetch.Messaging
                     {
                         if (ValidateMessageSignature && !IsValidSignature(message))
                         {
-                            throw new MessageHandlingException(String.Format("Message signature {0} is not valid", message.Signature), message);
+                            throw new MessageHandlingException(String.Format("Message signature {0} is not valid for auth token {1}", message.Signature, AuthToken), message);
                         }
 
                         MessagesReceived++;
