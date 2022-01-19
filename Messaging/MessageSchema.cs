@@ -22,6 +22,11 @@ namespace Chetch.Messaging
             Message = message;
         }
 
+        public MessageSchema(MessageType messageType)
+        {
+            Message = new Message(messageType);
+        }
+
         //TODO: add conforms chect
         virtual public bool ConformsToSchema(Message message)
         {
