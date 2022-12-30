@@ -661,7 +661,7 @@ namespace Chetch.Messaging
                         }
                         catch (Exception e)
                         {
-                            Tracing?.TraceEvent(TraceEventType.Error, 2000, e.Message);
+                            Tracing?.TraceEvent(TraceEventType.Error, 2001, "Subscription error: {0}", e.Message);
                         }
                     }
                     break;
